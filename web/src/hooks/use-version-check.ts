@@ -3,8 +3,8 @@ import { App } from "antd";
 import { APP_VERSION } from "@/constant/env";
 import { parseChangelog, type ReleaseInfo } from "@/lib/release";
 
-const latestVersionUrl = "https://raw.githubusercontent.com/basketikun/infinite-canvas/main/VERSION";
-const latestChangelogUrl = "https://raw.githubusercontent.com/basketikun/infinite-canvas/main/CHANGELOG.md";
+const latestVersionUrl = "https://raw.githubusercontent.com/csyqlz/vozeb/main/VERSION";
+const latestChangelogUrl = "https://raw.githubusercontent.com/csyqlz/vozeb/main/CHANGELOG.md";
 
 function readLocalReleases(): ReleaseInfo[] {
     try {
@@ -20,10 +20,26 @@ function toVersionParts(version: string) {
 }
 
 function isNewerVersion(latestVersion: string, currentVersion: string) {
-    const latest = toVersionParts(latestVersion);
-    const current = toVersionParts(currentVersion);
-    if (!latest || !current) return false;
-    return latest.some((value, index) => value > current[index] && latest.slice(0, index).every((part, prevIndex) => part === current[prevIndex]));
+    return compareVersions(latestVersion, currentVersion) > 0;
+}
+
+function compareVersions(a: string, b: string) {
+    const left = toVersionParts(a);
+    const right = toVersionParts(b);
+    if (!left || !right) return 0;
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) return left[index] - right[index];
+    }
+    return 0;
+}
+
+function mergeReleases(primary: ReleaseInfo[], secondary: ReleaseInfo[]) {
+    const seen = new Set<string>();
+    return [...primary, ...secondary].filter((release) => {
+        if (seen.has(release.version)) return false;
+        seen.add(release.version);
+        return true;
+    });
 }
 
 export function useVersionCheck() {
@@ -41,7 +57,8 @@ export function useVersionCheck() {
             const response = await fetch(latestVersionUrl);
             if (!response.ok) return false;
             const version = await response.text();
-            setLatestVersion(version.trim() || currentVersion);
+            const remoteVersion = version.trim() || currentVersion;
+            setLatestVersion(compareVersions(remoteVersion, currentVersion) > 0 ? remoteVersion : currentVersion);
             return true;
         } catch {
             return false;
@@ -56,8 +73,11 @@ export function useVersionCheck() {
                 if (!versionResponse.ok) throw new Error("版本读取失败");
                 if (!changelogResponse.ok) throw new Error("更新日志读取失败");
                 const [version, changelog] = await Promise.all([versionResponse.text(), changelogResponse.text()]);
-                setLatestVersion(version.trim() || currentVersion);
-                if (changelog.trim()) setReleases(parseChangelog(changelog));
+                const remoteVersion = version.trim() || currentVersion;
+                const remoteReleases = changelog.trim() ? parseChangelog(changelog) : [];
+                const remoteIsNewer = compareVersions(remoteVersion, currentVersion) > 0;
+                setLatestVersion(remoteIsNewer ? remoteVersion : currentVersion);
+                setReleases(remoteIsNewer ? mergeReleases(remoteReleases, localReleases) : mergeReleases(localReleases, remoteReleases));
                 if (showMessage) message.success("已获取最新版本信息");
                 return true;
             } catch {

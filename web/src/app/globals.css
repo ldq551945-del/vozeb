@@ -447,6 +447,26 @@
         top: 21px;
     }
 
+    .ant-message .ant-message-notice-content {
+        border: 1px solid rgba(120, 113, 108, 0.18);
+        border-radius: 8px;
+        box-shadow: 0 12px 32px rgba(28, 25, 23, 0.14);
+        padding: 10px 14px;
+    }
+
+    .ant-message .ant-message-custom-content {
+        align-items: center;
+        display: inline-flex;
+        gap: 8px;
+    }
+
+    .dark .ant-message .ant-message-notice-content {
+        background: rgba(12, 10, 9, 0.96);
+        border-color: rgba(255, 255, 255, 0.12);
+        box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+        color: #fafaf9;
+    }
+
     @keyframes canvas-batch-child-in {
         from {
             opacity: 0;

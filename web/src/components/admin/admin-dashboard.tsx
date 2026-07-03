@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { App, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag } from "antd";
+import { App, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from "antd";
 import type { TableColumnsType } from "antd";
 import { Database, Gift, KeyRound, PlugZap, Plus, RefreshCw, Save, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserRound, UsersRound } from "lucide-react";
 
@@ -31,6 +31,8 @@ type UserEditorValue = {
     quota: UserQuota;
 };
 
+type AdminSectionKey = "overview" | "settings" | "users" | "prompts";
+
 export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, currentUser }: AdminDashboardProps) {
     const { message } = App.useApp();
     const [promptForm] = Form.useForm<PromptFormValue>();
@@ -44,11 +46,13 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
     const [promptSaving, setPromptSaving] = useState(false);
     const [deletingPromptId, setDeletingPromptId] = useState("");
     const [editingUser, setEditingUser] = useState<PublicUser | null>(null);
+    const [activeSection, setActiveSection] = useState<AdminSectionKey>("overview");
     const stats = useMemo(
         () => ({
             total: users.length,
             active: users.filter((user) => user.status === "active").length,
             admins: users.filter((user) => user.role === "admin").length,
+            disabled: users.filter((user) => user.status === "disabled").length,
         }),
         [users],
     );
@@ -290,188 +294,179 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
             ),
         },
     ];
+    const activeSectionInfo = adminSections.find((section) => section.key === activeSection) || adminSections[0];
 
     return (
-        <div className="space-y-8">
-            <section className="grid gap-4 md:grid-cols-4">
-                <Metric label="用户总数" value={stats.total} icon={<UsersRound className="size-5" />} />
-                <Metric label="可用账号" value={stats.active} icon={<UserRound className="size-5" />} />
-                <Metric label="管理员" value={stats.admins} icon={<ShieldCheck className="size-5" />} />
-                <Metric label="公共提示词" value={prompts.length} icon={<KeyRound className="size-5" />} />
-            </section>
-
-            <section className="border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-950">
-                <div className="flex flex-col gap-3 border-b border-stone-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between dark:border-stone-800">
-                    <div>
-                        <h2 className="text-lg font-semibold text-stone-950 dark:text-stone-100">系统设置</h2>
-                        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">账号策略、额度规则和默认接口集中管理。</p>
+        <div className="grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)]">
+            <AdminSectionNav activeKey={activeSection} onChange={setActiveSection} />
+            <div className="min-w-0 space-y-5">
+                <div className="flex flex-col gap-1 rounded-lg border border-stone-200 bg-white px-4 py-3 shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-stone-950 dark:text-stone-100">
+                        {activeSectionInfo.icon}
+                        <span>{activeSectionInfo.label}</span>
                     </div>
-                    <div className="flex flex-wrap gap-2 text-xs text-stone-500 dark:text-stone-400">
-                        <Tag className="m-0">
-                            接口 {settingsSummary.enabledChannels}/{settingsSummary.totalChannels}
-                        </Tag>
-                        <Tag className="m-0">模型 {settingsSummary.models}</Tag>
-                        <Tag className="m-0">{settings.registrationEnabled ? "注册开放" : "注册关闭"}</Tag>
-                    </div>
+                    <p className="text-sm leading-6 text-stone-500 dark:text-stone-400">{activeSectionInfo.description}</p>
                 </div>
-                <div className="px-5 pt-4">
-                    <Tabs
-                        defaultActiveKey="account"
-                        items={[
-                            {
-                                key: "account",
-                                label: (
-                                    <span className="inline-flex items-center gap-2">
-                                        <UserCog className="size-4" />
-                                        账号与额度
-                                    </span>
-                                ),
-                                children: (
-                                    <div className="space-y-5 pb-5">
-                                        <div className="grid gap-5 xl:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)]">
-                                            <div className="border border-stone-200 p-4 dark:border-stone-800">
-                                                <SectionTitle icon={<UserCog className="size-4" />} title="账号策略" />
-                                                <div className="mt-4 space-y-4">
-                                                    <SettingToggle
-                                                        title="开放注册"
-                                                        description="关闭后，新账号不能自助注册。"
-                                                        checked={settings.registrationEnabled}
-                                                        checkedChildren="开放"
-                                                        unCheckedChildren="关闭"
-                                                        onChange={(registrationEnabled) => setSettings((current) => ({ ...current, registrationEnabled }))}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <QuotaRuleTable defaultQuota={settings.defaultQuota} checkInReward={settings.checkInReward} onDefaultQuotaChange={updateDefaultQuota} onCheckInRewardChange={updateCheckInReward} />
-                                        </div>
-                                        <div className="flex justify-end">
-                                            <Button
-                                                type="primary"
-                                                loading={settingsLoading}
-                                                icon={<Save className="size-4" />}
-                                                onClick={() => saveSettings({ registrationEnabled: settings.registrationEnabled, defaultQuota: settings.defaultQuota, checkInReward: settings.checkInReward }, "账号与额度设置已保存")}
-                                            >
-                                                保存账号与额度
-                                            </Button>
-                                        </div>
+
+                {activeSection === "overview" ? (
+                    <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                        <Metric label="用户总数" value={stats.total} detail={`${stats.active} 个可用账号`} icon={<UsersRound className="size-5" />} tone="slate" />
+                        <Metric label="管理员" value={stats.admins} detail={`${stats.disabled} 个账号禁用`} icon={<ShieldCheck className="size-5" />} tone="blue" />
+                        <Metric label="通用接口" value={settingsSummary.enabledChannels} detail={`共 ${settingsSummary.totalChannels} 个渠道`} icon={<PlugZap className="size-5" />} tone="emerald" />
+                        <Metric label="公共提示词" value={prompts.length} detail={`${settingsSummary.models} 个模型已录入`} icon={<KeyRound className="size-5" />} tone="amber" />
+                    </section>
+                ) : null}
+
+                {activeSection === "settings" ? (
+                    <Panel>
+                        <PanelHeader
+                            title="系统设置"
+                            description="账号、额度和系统接口分区管理。"
+                            actions={
+                                <div className="flex flex-wrap gap-2 text-xs text-stone-500 dark:text-stone-400">
+                                    <Tag className="m-0">
+                                        接口 {settingsSummary.enabledChannels}/{settingsSummary.totalChannels}
+                                    </Tag>
+                                    <Tag className="m-0">模型 {settingsSummary.models}</Tag>
+                                    <Tag className="m-0">{settings.registrationEnabled ? "注册开放" : "注册关闭"}</Tag>
+                                </div>
+                            }
+                        />
+                        <div className="space-y-5 p-4 sm:p-5">
+                            <div className="grid gap-4 xl:grid-cols-[minmax(260px,0.66fr)_minmax(0,1.34fr)]">
+                                <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40">
+                                    <SectionTitle icon={<UserCog className="size-4" />} title="账号策略" />
+                                    <div className="mt-4 space-y-4">
+                                        <SettingToggle
+                                            title="开放注册"
+                                            description="关闭后，新账号不能自助注册。"
+                                            checked={settings.registrationEnabled}
+                                            checkedChildren="开放"
+                                            unCheckedChildren="关闭"
+                                            onChange={(registrationEnabled) => setSettings((current) => ({ ...current, registrationEnabled }))}
+                                        />
                                     </div>
-                                ),
-                            },
-                            {
-                                key: "interface",
-                                label: (
-                                    <span className="inline-flex items-center gap-2">
-                                        <PlugZap className="size-4" />
-                                        通用接口
-                                    </span>
-                                ),
-                                children: (
-                                    <div className="space-y-5 pb-5">
-                                        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                                            <SettingInlineToggle
-                                                title="允许用户自配接口"
-                                                checked={settings.allowUserApiConfig}
-                                                checkedChildren="允许"
-                                                unCheckedChildren="禁止"
-                                                onChange={(allowUserApiConfig) => setSettings((current) => ({ ...current, allowUserApiConfig }))}
-                                            />
-                                            <Space wrap>
-                                                <Button icon={<RefreshCw className="size-4" />} loading={fetchingModelId === "all"} onClick={() => void fetchAllModels()}>
-                                                    拉取全部模型
-                                                </Button>
-                                                <Button icon={<Plus className="size-4" />} onClick={addChannel}>
-                                                    新增渠道
-                                                </Button>
-                                                <Button
-                                                    type="primary"
-                                                    loading={settingsLoading}
-                                                    icon={<Save className="size-4" />}
-                                                    onClick={() => saveSettings({ systemChannels: settings.systemChannels, defaultModels: settings.defaultModels, allowUserApiConfig: settings.allowUserApiConfig }, "通用接口已保存")}
-                                                >
-                                                    保存接口设置
-                                                </Button>
-                                            </Space>
-                                        </div>
-                                        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-                                            <div className="space-y-3">
-                                                {settings.systemChannels.map((channel) => (
-                                                    <SystemChannelEditor
-                                                        key={channel.id}
-                                                        channel={channel}
-                                                        fetching={fetchingModelId === channel.id}
-                                                        onChange={(patch) => updateChannel(channel.id, patch)}
-                                                        onDelete={() => deleteChannel(channel.id)}
-                                                        onFetchModels={() => void fetchModelsForChannel(channel)}
-                                                    />
-                                                ))}
-                                                {!settings.systemChannels.length ? <div className="border border-dashed border-stone-200 p-8 text-center text-sm text-stone-500 dark:border-stone-800 dark:text-stone-400">还没有通用接口。</div> : null}
-                                            </div>
-                                            <div className="border border-stone-200 p-4 dark:border-stone-800">
-                                                <SectionTitle icon={<Database className="size-4" />} title="默认模型" />
-                                                <div className="mt-4 space-y-3">
-                                                    {defaultModelKeys.map((item) => (
-                                                        <LabeledControl key={item.key} label={item.label}>
-                                                            <Input
-                                                                value={settings.defaultModels[item.key]}
-                                                                placeholder="模型名"
-                                                                onChange={(event) => setSettings((current) => ({ ...current, defaultModels: { ...current.defaultModels, [item.key]: event.target.value } }))}
-                                                            />
-                                                        </LabeledControl>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
+                                </div>
+                                <QuotaRuleTable defaultQuota={settings.defaultQuota} checkInReward={settings.checkInReward} onDefaultQuotaChange={updateDefaultQuota} onCheckInRewardChange={updateCheckInReward} />
+                            </div>
+                            <div className="flex justify-end border-b border-stone-200 pb-5 dark:border-stone-800">
+                                <Button
+                                    type="primary"
+                                    loading={settingsLoading}
+                                    icon={<Save className="size-4" />}
+                                    onClick={() => saveSettings({ registrationEnabled: settings.registrationEnabled, defaultQuota: settings.defaultQuota, checkInReward: settings.checkInReward }, "账号与额度设置已保存")}
+                                >
+                                    保存账号与额度
+                                </Button>
+                            </div>
+
+                            <div className="flex flex-col gap-3 rounded-lg border border-stone-200 bg-stone-50/70 p-3 xl:flex-row xl:items-center xl:justify-between dark:border-stone-800 dark:bg-stone-900/40">
+                                <SettingInlineToggle
+                                    title="允许用户自配接口"
+                                    checked={settings.allowUserApiConfig}
+                                    checkedChildren="允许"
+                                    unCheckedChildren="禁止"
+                                    onChange={(allowUserApiConfig) => setSettings((current) => ({ ...current, allowUserApiConfig }))}
+                                />
+                                <Space wrap className="justify-end">
+                                    <Button icon={<RefreshCw className="size-4" />} loading={fetchingModelId === "all"} onClick={() => void fetchAllModels()}>
+                                        拉取全部模型
+                                    </Button>
+                                    <Button icon={<Plus className="size-4" />} onClick={addChannel}>
+                                        新增渠道
+                                    </Button>
+                                    <Button
+                                        type="primary"
+                                        loading={settingsLoading}
+                                        icon={<Save className="size-4" />}
+                                        onClick={() => saveSettings({ systemChannels: settings.systemChannels, defaultModels: settings.defaultModels, allowUserApiConfig: settings.allowUserApiConfig }, "通用接口已保存")}
+                                    >
+                                        保存接口设置
+                                    </Button>
+                                </Space>
+                            </div>
+                            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                                <div className="space-y-3">
+                                    {settings.systemChannels.map((channel) => (
+                                        <SystemChannelEditor
+                                            key={channel.id}
+                                            channel={channel}
+                                            fetching={fetchingModelId === channel.id}
+                                            onChange={(patch) => updateChannel(channel.id, patch)}
+                                            onDelete={() => deleteChannel(channel.id)}
+                                            onFetchModels={() => void fetchModelsForChannel(channel)}
+                                        />
+                                    ))}
+                                    {!settings.systemChannels.length ? (
+                                        <div className="rounded-lg border border-dashed border-stone-200 bg-stone-50/70 p-8 text-center text-sm text-stone-500 dark:border-stone-800 dark:bg-stone-900/30 dark:text-stone-400">还没有通用接口。</div>
+                                    ) : null}
+                                </div>
+                                <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40">
+                                    <SectionTitle icon={<Database className="size-4" />} title="默认模型" />
+                                    <div className="mt-4 space-y-3">
+                                        {defaultModelKeys.map((item) => (
+                                            <LabeledControl key={item.key} label={item.label}>
+                                                <Input
+                                                    value={settings.defaultModels[item.key]}
+                                                    placeholder="模型名"
+                                                    onChange={(event) => setSettings((current) => ({ ...current, defaultModels: { ...current.defaultModels, [item.key]: event.target.value } }))}
+                                                />
+                                            </LabeledControl>
+                                        ))}
                                     </div>
-                                ),
-                            },
-                        ]}
-                    />
-                </div>
-            </section>
+                                </div>
+                            </div>
+                        </div>
+                    </Panel>
+                ) : null}
 
-            <section className="border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-950">
-                <div className="flex flex-col gap-3 border-b border-stone-200 px-5 py-4 md:flex-row md:items-center md:justify-between dark:border-stone-800">
-                    <div>
-                        <h2 className="text-lg font-semibold text-stone-950 dark:text-stone-100">用户管理</h2>
-                        <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">调整角色、账号状态和每日额度。</p>
-                    </div>
-                    <Button href="/register">新增用户</Button>
-                </div>
-                <Table rowKey="id" columns={userColumns} dataSource={users} pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 1040 }} />
-            </section>
+                {activeSection === "users" ? (
+                    <Panel>
+                        <PanelHeader
+                            title="用户管理"
+                            description="调整角色、账号状态和每日额度。"
+                            actions={
+                                <Button href="/register" icon={<Plus className="size-4" />}>
+                                    新增用户
+                                </Button>
+                            }
+                        />
+                        <Table rowKey="id" columns={userColumns} dataSource={users} pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 1040 }} size="middle" />
+                    </Panel>
+                ) : null}
 
-            <section className="border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-950">
-                <div className="border-b border-stone-200 px-5 py-4 dark:border-stone-800">
-                    <h2 className="text-lg font-semibold text-stone-950 dark:text-stone-100">公共提示词库</h2>
-                    <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">这里新增的提示词会出现在用户端“提示词库”；旧的外部仓库提示词已不再加载。</p>
-                </div>
-                <div className="grid gap-5 p-5 lg:grid-cols-[420px_minmax(0,1fr)]">
-                    <Form form={promptForm} layout="vertical" requiredMark={false} onFinish={createPrompt}>
-                        <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }]}>
-                            <Input />
-                        </Form.Item>
-                        <Form.Item label="分类" name="category">
-                            <Input placeholder="例如：商业海报" />
-                        </Form.Item>
-                        <Form.Item label="标签" name="tags">
-                            <Input placeholder="用逗号分隔" />
-                        </Form.Item>
-                        <Form.Item label="封面 URL" name="coverUrl">
-                            <Input placeholder="可选" />
-                        </Form.Item>
-                        <Form.Item label="提示词内容" name="prompt" rules={[{ required: true, message: "请输入提示词内容" }]}>
-                            <Input.TextArea rows={5} />
-                        </Form.Item>
-                        <Form.Item label="备注 / 预览" name="preview">
-                            <Input.TextArea rows={2} />
-                        </Form.Item>
-                        <Button type="primary" htmlType="submit" loading={promptSaving} icon={<Plus className="size-4" />}>
-                            插入公共提示词
-                        </Button>
-                    </Form>
-                    <Table rowKey="id" columns={promptColumns} dataSource={prompts} pagination={{ pageSize: 6, hideOnSinglePage: true }} />
-                </div>
-            </section>
+                {activeSection === "prompts" ? (
+                    <Panel>
+                        <PanelHeader title="公共提示词库" description="这里新增的提示词会出现在用户端“提示词库”；旧的外部仓库提示词已不再加载。" />
+                        <div className="grid gap-5 p-4 lg:grid-cols-[400px_minmax(0,1fr)] sm:p-5">
+                            <Form className="rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40" form={promptForm} layout="vertical" requiredMark={false} onFinish={createPrompt}>
+                                <Form.Item label="标题" name="title" rules={[{ required: true, message: "请输入标题" }]}>
+                                    <Input />
+                                </Form.Item>
+                                <Form.Item label="分类" name="category">
+                                    <Input placeholder="例如：商业海报" />
+                                </Form.Item>
+                                <Form.Item label="标签" name="tags">
+                                    <Input placeholder="用逗号分隔" />
+                                </Form.Item>
+                                <Form.Item label="封面 URL" name="coverUrl">
+                                    <Input placeholder="可选" />
+                                </Form.Item>
+                                <Form.Item label="提示词内容" name="prompt" rules={[{ required: true, message: "请输入提示词内容" }]}>
+                                    <Input.TextArea rows={5} />
+                                </Form.Item>
+                                <Form.Item label="备注 / 预览" name="preview">
+                                    <Input.TextArea rows={2} />
+                                </Form.Item>
+                                <Button type="primary" htmlType="submit" loading={promptSaving} icon={<Plus className="size-4" />}>
+                                    插入公共提示词
+                                </Button>
+                            </Form>
+                            <Table rowKey="id" columns={promptColumns} dataSource={prompts} pagination={{ pageSize: 6, hideOnSinglePage: true }} size="middle" />
+                        </div>
+                    </Panel>
+                ) : null}
+            </div>
 
             <Modal
                 title={editingUser ? `用户管理：${editingUser.displayName}` : "用户管理"}
@@ -516,10 +511,58 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
     );
 }
 
+function Panel({ children }: { children: ReactNode }) {
+    return <section className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">{children}</section>;
+}
+
+function AdminSectionNav({ activeKey, onChange }: { activeKey: AdminSectionKey; onChange: (key: AdminSectionKey) => void }) {
+    return (
+        <aside className="xl:sticky xl:top-20 xl:self-start">
+            <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white p-2 shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
+                <div className="flex gap-2 xl:flex-col">
+                    {adminSections.map((section) => {
+                        const active = section.key === activeKey;
+                        return (
+                            <button
+                                key={section.key}
+                                type="button"
+                                className={`flex min-w-36 items-center gap-3 rounded-md px-3 py-3 text-left transition xl:min-w-0 ${
+                                    active
+                                        ? "bg-stone-950 text-white shadow-sm dark:bg-stone-900 dark:text-stone-100 dark:ring-1 dark:ring-stone-700"
+                                        : "text-stone-600 hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-stone-900 dark:hover:text-white"
+                                }`}
+                                onClick={() => onChange(section.key)}
+                            >
+                                <span className={`flex size-8 shrink-0 items-center justify-center rounded-md ${active ? "bg-white/15 dark:bg-stone-800" : "bg-stone-100 dark:bg-stone-900"}`}>{section.icon}</span>
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold">{section.label}</span>
+                                    <span className={`mt-0.5 block truncate text-xs ${active ? "text-white/70 dark:text-stone-400" : "text-stone-500 dark:text-stone-500"}`}>{section.shortDescription}</span>
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        </aside>
+    );
+}
+
+function PanelHeader({ title, description, actions }: { title: string; description: string; actions?: ReactNode }) {
+    return (
+        <div className="flex flex-col gap-3 border-b border-stone-200 px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between dark:border-stone-800">
+            <div className="min-w-0">
+                <h2 className="text-base font-semibold text-stone-950 dark:text-stone-100">{title}</h2>
+                <p className="mt-1 text-sm leading-6 text-stone-500 dark:text-stone-400">{description}</p>
+            </div>
+            {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+        </div>
+    );
+}
+
 function SectionTitle({ icon, title }: { icon: ReactNode; title: string }) {
     return (
         <div className="flex items-center gap-2 text-sm font-semibold text-stone-950 dark:text-stone-100">
-            <span className="flex size-7 items-center justify-center rounded-md bg-stone-100 text-stone-700 dark:bg-stone-900 dark:text-stone-200">{icon}</span>
+            <span className="flex size-7 items-center justify-center rounded-md bg-white text-stone-700 ring-1 ring-stone-200 dark:bg-stone-950 dark:text-stone-200 dark:ring-stone-800">{icon}</span>
             <span>{title}</span>
         </div>
     );
@@ -539,7 +582,7 @@ function SettingToggle({ title, description, checked, checkedChildren, unChecked
 
 function SettingInlineToggle({ title, checked, checkedChildren, unCheckedChildren, onChange }: { title: string; checked: boolean; checkedChildren: string; unCheckedChildren: string; onChange: (checked: boolean) => void }) {
     return (
-        <div className="flex w-full items-center justify-between gap-4 border border-stone-200 px-4 py-3 xl:w-auto dark:border-stone-800">
+        <div className="flex w-full items-center justify-between gap-4 rounded-md bg-white px-4 py-2.5 ring-1 ring-stone-200 xl:w-auto dark:bg-stone-950 dark:ring-stone-800">
             <div className="text-sm font-medium text-stone-950 dark:text-stone-100">{title}</div>
             <Switch className="shrink-0" checked={checked} checkedChildren={checkedChildren} unCheckedChildren={unCheckedChildren} onChange={onChange} />
         </div>
@@ -558,7 +601,7 @@ function QuotaRuleTable({
     onCheckInRewardChange: (key: keyof UserQuota, value: number | null) => void;
 }) {
     return (
-        <div className="border border-stone-200 p-4 dark:border-stone-800">
+        <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40">
             <SectionTitle icon={<Gift className="size-4" />} title="额度规则" />
             <div className="mt-4 overflow-x-auto">
                 <div className="min-w-[540px]">
@@ -584,7 +627,7 @@ function QuotaRuleTable({
 
 function SystemChannelEditor({ channel, fetching, onChange, onDelete, onFetchModels }: { channel: SystemModelChannel; fetching: boolean; onChange: (patch: Partial<SystemModelChannel>) => void; onDelete: () => void; onFetchModels: () => void }) {
     return (
-        <div className="border border-stone-200 p-4 dark:border-stone-800">
+        <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -638,14 +681,16 @@ function LabeledControl({ label, children }: { label: string; children: ReactNod
     );
 }
 
-function Metric({ label, value, icon }: { label: string; value: number; icon: ReactNode }) {
+function Metric({ label, value, detail, icon, tone }: { label: string; value: number; detail: string; icon: ReactNode; tone: "slate" | "blue" | "emerald" | "amber" }) {
+    const toneClass = metricToneClass[tone];
     return (
-        <div className="flex items-center justify-between border border-stone-200 bg-white p-5 dark:border-stone-800 dark:bg-stone-950">
-            <div>
-                <p className="text-sm text-stone-500 dark:text-stone-400">{label}</p>
-                <p className="mt-2 text-3xl font-semibold text-stone-950 dark:text-stone-100">{value}</p>
+        <div className="flex min-h-28 items-center justify-between rounded-lg border border-stone-200 bg-white p-4 shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
+            <div className="min-w-0">
+                <p className="text-sm font-medium text-stone-500 dark:text-stone-400">{label}</p>
+                <p className="mt-2 text-3xl font-semibold leading-none text-stone-950 dark:text-stone-100">{value}</p>
+                <p className="mt-2 truncate text-xs text-stone-500 dark:text-stone-400">{detail}</p>
             </div>
-            <div className="flex size-10 items-center justify-center rounded-md bg-stone-100 text-stone-700 dark:bg-stone-900 dark:text-stone-200">{icon}</div>
+            <div className={`flex size-10 shrink-0 items-center justify-center rounded-md ${toneClass}`}>{icon}</div>
         </div>
     );
 }
@@ -720,3 +765,17 @@ const defaultModelKeys = [
     { key: "textModel", label: "文本" },
     { key: "audioModel", label: "音频" },
 ] as const;
+
+const adminSections: Array<{ key: AdminSectionKey; label: string; description: string; shortDescription: string; icon: ReactNode }> = [
+    { key: "overview", label: "概览", description: "快速查看用户、接口、模型和公共提示词状态。", shortDescription: "关键数据", icon: <Database className="size-4" /> },
+    { key: "settings", label: "系统设置", description: "管理注册策略、签到额度、通用接口和默认模型。", shortDescription: "账号与接口", icon: <SlidersHorizontal className="size-4" /> },
+    { key: "users", label: "用户管理", description: "调整用户角色、账号状态和每日额度。", shortDescription: "角色额度", icon: <UsersRound className="size-4" /> },
+    { key: "prompts", label: "提示词库", description: "维护会出现在用户端提示词库里的公共提示词。", shortDescription: "公共内容", icon: <KeyRound className="size-4" /> },
+];
+
+const metricToneClass = {
+    slate: "bg-stone-100 text-stone-700 dark:bg-stone-900 dark:text-stone-200",
+    blue: "bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+    emerald: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+    amber: "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300",
+};

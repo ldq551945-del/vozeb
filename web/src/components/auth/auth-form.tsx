@@ -62,11 +62,11 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
                                 WebkitMask: "url(/logo.svg) center / contain no-repeat",
                             }}
                         />
-                        无限画布
+                        Vozeb
                     </Link>
                     <div>
                         <p className="text-sm text-stone-400">{firstUser ? "首次设置" : isRegister ? "创建账号" : "账号访问"}</p>
-                        <h1 className="mt-3 text-balance text-3xl font-semibold tracking-normal">{firstUser ? "创建第一个管理员账号" : isRegister ? "注册后进入创作工作台" : "登录继续你的画布创作"}</h1>
+                        <h1 className="mt-3 text-balance text-3xl font-semibold tracking-normal">{firstUser ? "创建第一个管理员账号" : isRegister ? "注册后进入 Vozeb 工作台" : "登录继续你的 Vozeb 创作"}</h1>
                     </div>
                     <p className="max-w-sm text-sm leading-6 text-stone-400">账号系统只负责身份和权限，画布、素材、模型等原有工作流会保留在登录后的主界面里。</p>
                 </section>
@@ -82,7 +82,16 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
 
                         <label className="block space-y-2">
                             <span className="text-sm font-medium text-stone-700 dark:text-stone-200">用户名</span>
-                            <Input size="large" prefix={<UserRound className="size-4 text-stone-400" />} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your_name" autoComplete="username" disabled={submitting || disabled} required />
+                            <Input
+                                size="large"
+                                prefix={<UserRound className="size-4 text-stone-400" />}
+                                value={username}
+                                onChange={(event) => setUsername(event.target.value)}
+                                placeholder="your_name"
+                                autoComplete="username"
+                                disabled={submitting || disabled}
+                                required
+                            />
                         </label>
 
                         {isRegister ? (
@@ -94,7 +103,16 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
 
                         <label className="block space-y-2">
                             <span className="text-sm font-medium text-stone-700 dark:text-stone-200">密码</span>
-                            <Input.Password size="large" prefix={<LockKeyhole className="size-4 text-stone-400" />} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={isRegister ? "至少 8 位" : "请输入密码"} autoComplete={isRegister ? "new-password" : "current-password"} disabled={submitting || disabled} required />
+                            <Input.Password
+                                size="large"
+                                prefix={<LockKeyhole className="size-4 text-stone-400" />}
+                                value={password}
+                                onChange={(event) => setPassword(event.target.value)}
+                                placeholder={isRegister ? "至少 8 位" : "请输入密码"}
+                                autoComplete={isRegister ? "new-password" : "current-password"}
+                                disabled={submitting || disabled}
+                                required
+                            />
                         </label>
 
                         <Button type="primary" htmlType="submit" size="large" block loading={submitting} disabled={disabled} icon={<ArrowRight className="size-4" />} iconPlacement="end">
