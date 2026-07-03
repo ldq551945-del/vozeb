@@ -15,6 +15,11 @@ description: 使用 Docker Compose 部署 VOZEB
 services:
   app:
     image: ghcr.io/csyqlz/vozeb:latest
+    volumes:
+      - vozeb-data:/app/web/.data
+
+volumes:
+  vozeb-data:
 ```
 
 ```bash
@@ -37,7 +42,30 @@ http://localhost:3000
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-2 核 2G 服务器建议优先使用发布镜像；如必须本地构建，请使用支持 BuildKit 的 Docker 版本，构建缓存会复用依赖和 `.next/cache`。
+2 核 2G 服务器建议优先使用发布镜像；如必须本地构建，请使用支持 BuildKit 的 Docker 版本，构建缓存会复用依赖和 `.next/cache`。主应用 Dockerfile 默认设置 `NEXT_BUILD_CPUS=1`，会降低 Next.js 构建时的 worker 数，减少低配服务器 CPU 和内存峰值。
+
+## 为什么低配服务器构建会拉满 CPU
+
+这不是异常崩溃，而是 Next.js 生产构建阶段的正常资源峰值。当前 VOZEB 已经比原作者早期版本多了账号系统、管理员后台、公共提示词种子、文档资料、standalone Docker 输出和 Turbopack 页面生成流程；`next build` 会编译、收集页面数据并生成静态页面，所以 2 核 2G 机器上 CPU 可能长时间接近 100%/200%，内存不足时还会用到 swap。
+
+原作者早期版本更偏纯前端个人画布工具，构建面更小，也没有现在这些后台和内置数据步骤，因此同规格服务器压力会低很多。
+
+建议顺序：
+
+1. 生产环境优先使用 `ghcr.io/csyqlz/vozeb:latest` 发布镜像，服务器只拉取和启动，不现场构建。
+2. 必须本地构建时保留 `NEXT_BUILD_CPUS=1`，并开启 BuildKit 缓存。
+3. 如果仍然卡死，在本机或 CI 构建镜像后推送到镜像仓库，再让服务器拉取。
+
+## 更新镜像
+
+使用发布镜像部署时，更新到最新版本只需要：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+如果你看到本地仍在运行 `vozeb:0.5.1-xxxx` 一类旧镜像，说明当前容器不是从 `ghcr.io/csyqlz/vozeb:latest` 更新而来。请改用本仓库新的 `docker-compose.yml`，或重新构建本地镜像。
 
 ## 文档站镜像
 
@@ -59,4 +87,11 @@ docker compose -f docker-compose.local.yml up -d --build
 
 ## 数据说明
 
-当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地；公共提示词库会写入服务端 `.data/prompts.json`，如需长期保留管理员提示词，请挂载 `.data` 目录。
+当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地。
+
+账号、后台网站设置、用户额度、签到记录和公共提示词库会写入服务端 `.data` 目录：
+
+- 用户与后台设置：`/app/web/.data/auth.json`
+- 管理员公共提示词：`/app/web/.data/prompts.json`
+
+本仓库的 `docker-compose.yml` 和 `docker-compose.local.yml` 默认把命名卷 `vozeb-data` 挂载到 `/app/web/.data`。正常执行 `docker compose pull && docker compose up -d` 更新镜像不会删除已有用户；只有执行 `docker compose down -v`、手动删除 Docker volume，或使用没有挂载 `.data` 的旧容器才可能导致数据丢失。

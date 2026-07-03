@@ -68,7 +68,16 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
 
                 <label className="block space-y-2">
                     <span className="text-sm font-medium text-stone-200">用户名</span>
-                    <Input size="large" prefix={<UserRound className="size-4 text-stone-500" />} value={username} onChange={(event) => setUsername(event.target.value)} placeholder="your_name" autoComplete="username" disabled={submitting || disabled} required />
+                    <Input
+                        size="large"
+                        prefix={<UserRound className="size-4 text-stone-500" />}
+                        value={username}
+                        onChange={(event) => setUsername(event.target.value)}
+                        placeholder="your_name"
+                        autoComplete="username"
+                        disabled={submitting || disabled}
+                        required
+                    />
                 </label>
 
                 {isRegister ? (
@@ -96,7 +105,7 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
                     {isRegister ? "注册并进入" : "登录"}
                 </Button>
 
-                <div className="text-center text-sm text-stone-400">
+                <div className="pt-2 text-center text-sm text-stone-400">
                     {isRegister ? (
                         <>
                             已有账号？{" "}

@@ -22,6 +22,7 @@ export async function PATCH(request: Request) {
     try {
         const body = await readJsonBody<Partial<AuthSettings>>(request);
         const patch: Partial<AuthSettings> = {};
+        if (body.site) patch.site = body.site;
         if (typeof body.registrationEnabled === "boolean") patch.registrationEnabled = body.registrationEnabled;
         if (typeof body.allowUserApiConfig === "boolean") patch.allowUserApiConfig = body.allowUserApiConfig;
         if (body.defaultQuota) patch.defaultQuota = body.defaultQuota;

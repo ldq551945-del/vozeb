@@ -93,6 +93,11 @@ export async function listAllLibraryPrompts() {
     return db.prompts.filter((item) => item.scope === "library").sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
+export async function countAllLibraryPrompts() {
+    const db = await readPromptDb({ includeSeeds: true });
+    return db.prompts.filter((item) => item.scope === "library").length;
+}
+
 export async function createPrompt(scope: PromptScope, input: PromptInput, ownerUserId?: string) {
     return mutatePromptDb((db) => {
         const now = new Date().toISOString();

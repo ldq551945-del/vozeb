@@ -2,18 +2,35 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { AppProviders } from "@/components/layout/app-providers";
+import { getAuthSettings } from "@/lib/auth/store";
 import "antd/dist/reset.css";
 import "./globals.css";
 import React from "react";
 
-export const metadata: Metadata = {
-    title: "VOZEB",
-    description: "面向 AI 图片创作与管理的 VOZEB 工作台",
-    icons: {
-        icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/favicon.ico" }],
-        shortcut: "/icon.svg",
-    },
-};
+export async function generateMetadata(): Promise<Metadata> {
+    const settings = await getAuthSettings();
+    const site = settings.site;
+    const iconUrl = site.logoUrl || "/icon.svg";
+    return {
+        metadataBase: siteMetadataBase(),
+        title: site.seoTitle || site.title,
+        description: site.seoDescription,
+        keywords: site.seoKeywords
+            .split(/[,，]/)
+            .map((keyword) => keyword.trim())
+            .filter(Boolean),
+        icons: {
+            icon: [{ url: iconUrl }, { url: "/favicon.ico" }],
+            shortcut: iconUrl,
+        },
+        openGraph: {
+            title: site.seoTitle || site.title,
+            description: site.seoDescription,
+            siteName: site.title,
+            images: iconUrl ? [{ url: iconUrl }] : undefined,
+        },
+    };
+}
 
 export default function RootLayout({
     children,
@@ -41,4 +58,13 @@ export default function RootLayout({
             </body>
         </html>
     );
+}
+
+function siteMetadataBase() {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+    try {
+        return new URL(siteUrl);
+    } catch {
+        return new URL("http://localhost:3000");
+    }
 }

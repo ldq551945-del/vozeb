@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Gift, Keyboard, LogOut, Settings2, ShieldCheck, UserCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -45,6 +45,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const setTheme = useThemeStore((state) => state.setTheme);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const canvasTheme = canvasThemes[theme];
+    const showAdminMetaActions = user?.role === "admin";
     const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
     const versionStyle = iconStyle;
@@ -56,7 +57,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                   {
                       key: "admin",
                       icon: <ShieldCheck className="size-4" />,
-                      label: <Link href="/admin">管理员后台</Link>,
+                      label: (
+                          <Link href="/admin" prefetch onMouseEnter={() => router.prefetch("/admin")} onFocus={() => router.prefetch("/admin")}>
+                              管理员后台
+                          </Link>
+                      ),
                   },
               ]
             : []),
@@ -67,6 +72,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             danger: true,
         },
     ];
+
+    useEffect(() => {
+        if (user?.role === "admin") router.prefetch("/admin");
+        if (user) router.prefetch("/canvas");
+    }, [router, user]);
 
     const handleMenuClick: MenuProps["onClick"] = async ({ key }) => {
         if (key !== "logout") return;
@@ -99,7 +109,15 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
             {user ? (
-                <button type="button" className={cn(naturalIconClass, user.checkedInToday && "cursor-default opacity-50 hover:text-stone-600 dark:hover:text-stone-300")} style={iconStyle} disabled={user.checkedInToday || checkingIn} onClick={handleCheckIn} aria-label={user.checkedInToday ? "今日已签到" : "每日签到"} title={user.checkedInToday ? "今日已签到" : "每日签到"}>
+                <button
+                    type="button"
+                    className={cn(naturalIconClass, user.checkedInToday && "cursor-default opacity-50 hover:text-stone-600 dark:hover:text-stone-300")}
+                    style={iconStyle}
+                    disabled={user.checkedInToday || checkingIn}
+                    onClick={handleCheckIn}
+                    aria-label={user.checkedInToday ? "今日已签到" : "每日签到"}
+                    title={user.checkedInToday ? "今日已签到" : "每日签到"}
+                >
                     <Gift className="size-4" />
                 </button>
             ) : null}
@@ -109,8 +127,12 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 </button>
             ) : null}
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
-            <VersionReleaseModal style={versionStyle} />
-            <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
+            {showAdminMetaActions ? (
+                <>
+                    <VersionReleaseModal style={versionStyle} />
+                    <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
+                </>
+            ) : null}
             {user ? (
                 <>
                     <Dropdown menu={{ items: accountItems, onClick: handleMenuClick }} trigger={["click"]} placement="bottomRight">
@@ -147,11 +169,6 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
 
 function formatQuotaReward(reward: CheckInPayload["reward"]) {
     if (!reward) return "签到奖励";
-    const parts = [
-        reward.imageDaily ? `图片 +${reward.imageDaily}` : "",
-        reward.videoDaily ? `视频 +${reward.videoDaily}` : "",
-        reward.textDaily ? `文本 +${reward.textDaily}` : "",
-        reward.audioDaily ? `音频 +${reward.audioDaily}` : "",
-    ].filter(Boolean);
+    const parts = [reward.imageDaily ? `图片 +${reward.imageDaily}` : "", reward.videoDaily ? `视频 +${reward.videoDaily}` : "", reward.textDaily ? `文本 +${reward.textDaily}` : "", reward.audioDaily ? `音频 +${reward.audioDaily}` : ""].filter(Boolean);
     return parts.length ? parts.join("、") : "今日奖励";
 }

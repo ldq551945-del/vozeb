@@ -179,21 +179,32 @@
         align-items: flex-start;
     }
 
+    .hero-title-stage {
+        margin-top: clamp(24px, 3.6vw, 42px);
+        padding: clamp(16px, 2.6vw, 30px) clamp(12px, 2.4vw, 28px) 0;
+        position: relative;
+    }
+
     .hero-cape {
-        height: clamp(72px, 10vw, 132px);
-        margin-top: clamp(-26px, -2.8vw, -14px);
-        max-width: min(760px, 92vw);
+        height: clamp(92px, 10vw, 148px);
+        margin-top: clamp(-70px, -5.2vw, -38px);
+        max-width: min(880px, 94vw);
         overflow: visible;
         pointer-events: none;
         transform-origin: 52% 40%;
-        width: 100%;
-        animation: hero-cape-float 7s ease-in-out infinite;
+        width: min(100%, 880px);
+        animation: hero-cape-float 9s ease-in-out infinite;
+    }
+
+    .hero-cape-reveal {
+        animation: hero-cape-reveal 8s ease-in-out infinite;
+        transform-origin: 0 50%;
     }
 
     .hero-cape-fill {
         opacity: 0.88;
         transform-origin: 52% 48%;
-        animation: hero-cape-breathe 5.4s ease-in-out infinite;
+        animation: hero-cape-breathe 8.4s ease-in-out infinite;
     }
 
     .hero-cape-edge {
@@ -208,7 +219,7 @@
         stroke-dasharray: 720;
         stroke-dashoffset: 0;
         stroke-width: 4.5;
-        animation: hero-cape-shimmer 5.8s ease-in-out infinite;
+        animation: hero-cape-shimmer 8.8s ease-in-out infinite;
     }
 
     .hero-cape-edge-soft {
@@ -231,10 +242,21 @@
     @keyframes hero-cape-float {
         0%,
         100% {
-            transform: translate3d(0, 0, 0) rotate(-0.4deg);
+            transform: translate3d(0, 0, 0) rotate(-0.6deg);
         }
         50% {
-            transform: translate3d(1.2%, -3px, 0) rotate(0.8deg);
+            transform: translate3d(1.4%, -5px, 0) rotate(0.9deg);
+        }
+    }
+
+    @keyframes hero-cape-reveal {
+        0%,
+        100% {
+            transform: scaleX(0.08);
+        }
+        38%,
+        76% {
+            transform: scaleX(1);
         }
     }
 
@@ -263,11 +285,8 @@
     .auth-page-bg,
     .animated-dot-bg {
         background:
-            radial-gradient(ellipse 78% 42% at 50% 50%, rgba(255, 255, 255, 0.74), transparent 66%),
-            radial-gradient(ellipse 90% 48% at 50% 96%, rgba(14, 165, 233, 0.16), transparent 62%),
-            radial-gradient(circle at 16% 22%, rgba(45, 212, 191, 0.08), transparent 28%),
-            radial-gradient(circle at 86% 72%, rgba(96, 165, 250, 0.09), transparent 30%),
-            linear-gradient(180deg, #f8fafc 0%, #edf8ff 48%, #f8fafc 100%);
+            radial-gradient(ellipse 78% 42% at 50% 50%, rgba(255, 255, 255, 0.74), transparent 66%), radial-gradient(ellipse 90% 48% at 50% 96%, rgba(14, 165, 233, 0.16), transparent 62%),
+            radial-gradient(circle at 16% 22%, rgba(45, 212, 191, 0.08), transparent 28%), radial-gradient(circle at 86% 72%, rgba(96, 165, 250, 0.09), transparent 30%), linear-gradient(180deg, #f8fafc 0%, #edf8ff 48%, #f8fafc 100%);
         isolation: isolate;
         position: relative;
     }
@@ -275,19 +294,13 @@
     .dark .auth-page-bg,
     .dark .animated-dot-bg {
         background:
-            radial-gradient(ellipse 46% 34% at 50% 42%, rgba(148, 163, 184, 0.2), transparent 68%),
-            radial-gradient(ellipse 110% 54% at 50% 100%, rgba(8, 145, 178, 0.24), transparent 64%),
-            radial-gradient(circle at 18% 20%, rgba(34, 211, 238, 0.12), transparent 30%),
-            radial-gradient(circle at 84% 70%, rgba(59, 130, 246, 0.14), transparent 34%),
-            linear-gradient(180deg, #020617 0%, #020611 44%, #031827 100%);
+            radial-gradient(ellipse 46% 34% at 50% 42%, rgba(148, 163, 184, 0.2), transparent 68%), radial-gradient(ellipse 110% 54% at 50% 100%, rgba(8, 145, 178, 0.24), transparent 64%),
+            radial-gradient(circle at 18% 20%, rgba(34, 211, 238, 0.12), transparent 30%), radial-gradient(circle at 84% 70%, rgba(59, 130, 246, 0.14), transparent 34%), linear-gradient(180deg, #020617 0%, #020611 44%, #031827 100%);
     }
 
     .auth-page-bg::before,
     .animated-dot-bg::before {
-        background-image:
-            linear-gradient(rgba(125, 211, 252, 0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(125, 211, 252, 0.06) 1px, transparent 1px),
-            radial-gradient(circle, rgba(125, 211, 252, 0.5) 0 1.15px, transparent 1.8px);
+        background-image: linear-gradient(rgba(125, 211, 252, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(125, 211, 252, 0.06) 1px, transparent 1px), radial-gradient(circle, rgba(125, 211, 252, 0.5) 0 1.15px, transparent 1.8px);
         background-position:
             0 0,
             0 0,
@@ -305,7 +318,49 @@
         z-index: 1;
     }
 
+    .landing-site-header {
+        background: rgba(2, 6, 23, 0.72);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(18px);
+    }
+
+    .landing-nav-pill {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        padding: 4px;
+    }
+
+    .landing-theme-toggle {
+        align-items: center;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 8px;
+        color: #e5e7eb;
+        display: inline-flex;
+        height: 38px;
+        justify-content: center;
+        transition:
+            background 0.18s ease,
+            color 0.18s ease,
+            border-color 0.18s ease;
+        width: 38px;
+    }
+
+    .landing-theme-toggle:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.22);
+        color: #ffffff;
+    }
+
+    .landing-theme-toggle svg {
+        height: 17px;
+        width: 17px;
+    }
+
     .landing-feature-panel,
+    .landing-stat-pill,
     .landing-auth-shell,
     .auth-panel {
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -314,13 +369,112 @@
         backdrop-filter: blur(18px);
     }
 
+    .landing-hero-copy {
+        background: transparent;
+        padding: clamp(8px, 2vw, 24px) 0;
+    }
+
+    .landing-auth-column {
+        min-height: min(680px, calc(100dvh - 8rem));
+        padding: clamp(22px, 4vw, 58px) clamp(10px, 2vw, 32px);
+    }
+
+    .landing-auth-modal .ant-modal-content {
+        background: radial-gradient(ellipse 90% 48% at 50% 0%, rgba(34, 211, 238, 0.18), transparent 68%), linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        overflow: hidden;
+        padding: 0;
+        box-shadow: 0 24px 90px rgba(2, 132, 199, 0.22);
+    }
+
+    .landing-auth-modal .ant-modal-body {
+        padding: 0;
+    }
+
+    .landing-auth-modal .ant-modal-close {
+        color: rgba(255, 255, 255, 0.72);
+        inset-inline-end: 16px;
+        top: 16px;
+    }
+
+    .landing-auth-modal-shell {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 34%), radial-gradient(ellipse 64% 40% at 50% 100%, rgba(14, 165, 233, 0.14), transparent 72%);
+        display: grid;
+        grid-template-columns: minmax(240px, 0.86fr) minmax(0, 1.14fr);
+        min-height: 520px;
+    }
+
+    .landing-auth-modal-brand {
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 36px 30px;
+    }
+
+    .landing-auth-modal-form {
+        align-items: center;
+        display: flex;
+        padding: 42px 38px;
+    }
+
+    .landing-auth-modal .auth-panel {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    @media (max-width: 760px) {
+        .landing-site-header > div {
+            grid-template-columns: 1fr auto;
+        }
+
+        .landing-auth-modal-shell {
+            display: block;
+            min-height: auto;
+        }
+
+        .landing-auth-modal-brand {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-right: 0;
+            gap: 22px;
+            padding: 28px 26px;
+        }
+
+        .landing-auth-modal-form {
+            padding: 30px 26px;
+        }
+    }
+
     .landing-feature-panel {
-        min-height: 152px;
-        padding: 18px;
+        min-height: 132px;
+        padding: 15px;
+    }
+
+    .landing-stat-pill {
+        align-items: center;
+        background: rgba(15, 23, 42, 0.52);
+        display: flex;
+        gap: 10px;
+        min-height: 66px;
+        padding: 12px 14px;
     }
 
     .landing-auth-shell {
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(2, 6, 23, 0.72));
         overflow: hidden;
+        position: sticky;
+        top: 112px;
+        box-shadow:
+            0 24px 90px rgba(2, 132, 199, 0.22),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    }
+
+    .landing-auth-shell .auth-panel {
+        border: 0;
+        box-shadow: none;
     }
 
     .auth-page-bg::before,
@@ -342,21 +496,18 @@
     }
 
     .animated-dot-bg::after {
-        background-image:
-            radial-gradient(ellipse 42% 30% at 50% 44%, rgba(255, 255, 255, 0.34), transparent 68%),
-            linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.08) 42%, rgba(2, 6, 23, 0.18) 100%);
+        background-image: radial-gradient(ellipse 42% 30% at 50% 44%, rgba(255, 255, 255, 0.34), transparent 68%), linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.08) 42%, rgba(2, 6, 23, 0.18) 100%);
         opacity: 0.48;
     }
 
     .dark .animated-dot-bg::after {
-        background-image:
-            radial-gradient(ellipse 42% 30% at 50% 44%, rgba(125, 211, 252, 0.16), transparent 68%),
-            linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.2) 64%, rgba(2, 6, 23, 0.34) 100%);
+        background-image: radial-gradient(ellipse 42% 30% at 50% 44%, rgba(125, 211, 252, 0.16), transparent 68%), linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(2, 6, 23, 0.2) 64%, rgba(2, 6, 23, 0.34) 100%);
         opacity: 1;
     }
 
     @media (prefers-reduced-motion: reduce) {
         .hero-cape,
+        .hero-cape-reveal,
         .hero-cape-fill,
         .hero-cape-edge-main {
             animation: none;

@@ -2,17 +2,27 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Image as ImageIcon, Layers3, Sparkles, Wand2 } from "lucide-react";
-import { App, Button, Image, Tag } from "antd";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Gauge, Image as ImageIcon, Layers3, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
+import { App, Button, Image, Modal, Tag } from "antd";
 
 import { AuthForm } from "@/components/auth/auth-form";
+import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
 import { navigationTools } from "@/constant/navigation-tools";
 import { type LocalUser, useUserStore } from "@/stores/use-user-store";
+import { useThemeStore } from "@/stores/use-theme-store";
 import { cn } from "@/lib/utils";
 
 type SessionPayload = {
     user?: LocalUser | null;
+    settings?: {
+        site?: {
+            title: string;
+            logoUrl: string;
+            seoDescription?: string;
+        };
+    };
 };
 
 const featureItems = [
@@ -21,10 +31,20 @@ const featureItems = [
     { icon: ImageIcon, title: "提示词资产", text: "内置公共提示词库与远程封面，灵感、参数和结果一起归档。" },
 ];
 
+const heroStats = [
+    { icon: ImageIcon, value: "874+", label: "远程封面提示词" },
+    { icon: Gauge, value: "1 CPU", label: "低配构建模式" },
+    { icon: ShieldCheck, value: ".data", label: "账号数据持久化" },
+];
+
 function Highlighter({ action, color, children }: { action: "highlight" | "underline"; color: string; children: ReactNode }) {
     return (
         <span className="relative inline-block px-1">
-            {action === "highlight" ? <span className="absolute inset-x-0 bottom-0 top-1 rounded-sm opacity-45" style={{ backgroundColor: color }} /> : <span className="absolute inset-x-0 bottom-0 h-1 rounded-full opacity-80" style={{ backgroundColor: color }} />}
+            {action === "highlight" ? (
+                <span className="absolute inset-x-0 bottom-0 top-1 rounded-sm opacity-45" style={{ backgroundColor: color }} />
+            ) : (
+                <span className="absolute inset-x-0 bottom-0 h-1 rounded-full opacity-80" style={{ backgroundColor: color }} />
+            )}
             <span className="relative font-medium text-stone-800 dark:text-stone-200">{children}</span>
         </span>
     );
@@ -34,6 +54,9 @@ function HeroCape() {
     return (
         <svg className="hero-cape" viewBox="0 0 760 160" role="presentation" aria-hidden="true">
             <defs>
+                <clipPath id="cape-reveal">
+                    <rect className="hero-cape-reveal" x="0" y="0" width="760" height="160" />
+                </clipPath>
                 <linearGradient id="cape-fill" x1="110" x2="660" y1="18" y2="104" gradientUnits="userSpaceOnUse">
                     <stop offset="0" stopColor="#67e8f9" stopOpacity="0" />
                     <stop offset="0.22" stopColor="#67e8f9" stopOpacity="0.18" />
@@ -49,28 +72,36 @@ function HeroCape() {
                     <stop offset="1" stopColor="#38bdf8" stopOpacity="0" />
                 </linearGradient>
             </defs>
-            <path className="hero-cape-fill" d="M128 84 C208 128 336 116 430 78 C526 38 596 10 682 18 C602 46 536 91 444 124 C330 164 210 151 128 84Z" fill="url(#cape-fill)" />
-            <path className="hero-cape-edge hero-cape-edge-main" d="M124 79 C200 122 333 113 429 75 C526 37 595 8 682 16" />
-            <path className="hero-cape-edge hero-cape-edge-soft" d="M154 105 C247 136 352 126 452 92 C535 64 594 48 655 48" />
-            <path className="hero-cape-tail" d="M586 42 C638 70 690 86 730 84" />
+            <g clipPath="url(#cape-reveal)">
+                <path className="hero-cape-fill" d="M82 76 C188 132 326 125 438 78 C538 36 619 5 724 18 C628 48 552 98 448 132 C312 176 172 150 82 76Z" fill="url(#cape-fill)" />
+                <path className="hero-cape-edge hero-cape-edge-main" d="M78 72 C178 126 323 121 438 74 C540 34 620 6 724 16" />
+                <path className="hero-cape-edge hero-cape-edge-soft" d="M120 105 C235 140 356 130 470 91 C555 62 620 46 695 48" />
+                <path className="hero-cape-tail" d="M584 42 C642 72 694 88 740 84" />
+            </g>
         </svg>
     );
 }
 
 export default function HomePage() {
+    const router = useRouter();
     const { message } = App.useApp();
     const [primaryTool] = navigationTools;
     const [promptShowcase, setPromptShowcase] = useState<Prompt[]>([]);
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewOpen, setPreviewOpen] = useState(false);
+    const [authOpen, setAuthOpen] = useState(false);
+    const [site, setSite] = useState({ title: "VOZEB", logoUrl: "/logo.svg", seoDescription: "面向 AI 图片创作与管理的 VOZEB 工作台" });
     const user = useUserStore((state) => state.user);
     const setUser = useUserStore((state) => state.setUser);
+    const theme = useThemeStore((state) => state.theme);
+    const setTheme = useThemeStore((state) => state.setTheme);
 
     useEffect(() => {
         void fetch("/api/auth/session")
             .then((response) => response.json() as Promise<SessionPayload>)
             .then((data) => {
                 if (data.user) setUser(data.user);
+                if (data.settings?.site) setSite((current) => ({ ...current, ...data.settings!.site }));
             })
             .catch(() => undefined);
 
@@ -81,55 +112,78 @@ export default function HomePage() {
 
     return (
         <main className="animated-dot-bg relative h-dvh overflow-y-auto bg-background text-stone-950 dark:text-stone-100">
-            <header className="relative z-10 border-b border-white/10 bg-black/35 backdrop-blur-xl">
-                <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-6">
+            <header className="landing-site-header relative z-10">
+                <div className="mx-auto grid h-20 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
                     <Link href="/" className="inline-flex items-center gap-3 text-white">
-                        <span
-                            className="size-9 bg-white"
-                            style={{
-                                mask: "url(/logo.svg) center / contain no-repeat",
-                                WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                            }}
-                        />
-                        <span className="text-xl font-semibold tracking-normal">VOZEB</span>
+                        <SiteLogo logoUrl={site.logoUrl} className="size-9" />
+                        <span className="text-xl font-semibold tracking-normal">{site.title || "VOZEB"}</span>
                     </Link>
-                    <nav className="hidden items-center gap-7 text-sm font-medium text-stone-300 md:flex">
+                    <nav className="landing-nav-pill hidden items-center gap-1 text-sm font-medium text-stone-300 md:flex">
                         {navigationTools.slice(0, 4).map((tool) => (
-                            <Link key={tool.slug} href={`/${tool.slug}`} className="transition hover:text-white">
+                            <Link key={tool.slug} href={`/${tool.slug}`} prefetch className="rounded-md px-4 py-2 transition hover:bg-white/10 hover:text-white">
                                 {tool.label}
                             </Link>
                         ))}
                     </nav>
-                    <Button href={user ? "/canvas" : "/login"}>{user ? "进入工作台" : "登录"}</Button>
+                    <div className="flex items-center justify-end gap-2">
+                        <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="landing-theme-toggle" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
+                        <Button className="landing-login-button" onClick={() => (user ? router.push("/canvas") : setAuthOpen(true))}>
+                            {user ? "进入工作台" : "登录"}
+                        </Button>
+                    </div>
                 </div>
             </header>
 
-            <section className="relative mx-auto grid min-h-[calc(100dvh-5rem)] max-w-7xl items-center gap-10 px-6 py-12 lg:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="relative z-10">
+            <section className="relative mx-auto flex min-h-[calc(100dvh-5rem)] max-w-[1500px] items-center justify-center px-6 py-12">
+                <div className="landing-hero-copy relative z-10 mx-auto w-full max-w-7xl text-center">
                     <div className="inline-flex items-center gap-2 rounded-md border border-cyan-200/20 bg-cyan-200/8 px-3 py-1.5 text-sm text-cyan-100">
                         <Sparkles className="size-4" />
-                        v0.5.2 官网化登录首屏
+                        v0.5.3 官网式创作入口
                     </div>
-                    <div className="hero-title-wrap mt-10 items-start text-left">
-                        <h1 className="ai-title-aurora max-w-5xl text-balance text-6xl font-semibold tracking-normal sm:text-7xl lg:text-8xl">VOZEB</h1>
-                        <HeroCape />
+                    <div className="hero-title-stage">
+                        <div className="hero-title-wrap">
+                            <h1 className="ai-title-aurora max-w-6xl text-balance text-7xl font-semibold tracking-normal sm:text-8xl lg:text-[9rem] xl:text-[11rem]">{site.title || "VOZEB"}</h1>
+                            <HeroCape />
+                        </div>
                     </div>
-                    <p className="mt-6 max-w-3xl text-balance text-lg leading-8 text-stone-500 dark:text-stone-300">
-                        在 <Highlighter action="underline" color="#FF9800">VOZEB</Highlighter> 中生成、连接和重组 <Highlighter action="highlight" color="#87CEFA">图片、文字与图形</Highlighter>，让创作从单次生成变成连续推演。
+                    <p className="mx-auto mt-5 max-w-4xl text-balance text-xl leading-9 text-stone-500 dark:text-stone-300">
+                        在{" "}
+                        <Highlighter action="underline" color="#FF9800">
+                            {site.title || "VOZEB"}
+                        </Highlighter>{" "}
+                        中生成、连接和重组{" "}
+                        <Highlighter action="highlight" color="#87CEFA">
+                            图片、文字与图形
+                        </Highlighter>
+                        ，让创作从单次生成变成连续推演。
                     </p>
-                    <div className="mt-9 flex flex-wrap items-center gap-3">
-                        <Button type="primary" size="large" href={`/${primaryTool.slug}`} icon={<ArrowRight className="size-4" />} iconPlacement="end">
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+                        <Button type="primary" size="large" onClick={() => (user ? router.push(`/${primaryTool.slug}`) : setAuthOpen(true))} icon={<ArrowRight className="size-4" />} iconPlacement="end">
                             开始使用
                         </Button>
                         <Button size="large" href="/prompts">
                             查看提示词库
                         </Button>
                     </div>
-                    <div className="mt-10 grid gap-3 sm:grid-cols-3">
+                    <div className="mx-auto mt-9 grid max-w-5xl gap-3 sm:grid-cols-3">
+                        {heroStats.map((item) => {
+                            const Icon = item.icon;
+                            return (
+                                <div key={item.label} className="landing-stat-pill justify-center text-left">
+                                    <Icon className="size-4 text-cyan-200" />
+                                    <div>
+                                        <div className="text-sm font-semibold text-white">{item.value}</div>
+                                        <div className="text-xs text-stone-400">{item.label}</div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div className="mx-auto mt-5 grid max-w-5xl gap-3 sm:grid-cols-3">
                         {featureItems.map((item) => {
                             const Icon = item.icon;
                             return (
-                                <article key={item.title} className="landing-feature-panel">
+                                <article key={item.title} className="landing-feature-panel text-left">
                                     <Icon className="size-5 text-cyan-200" />
                                     <h2 className="mt-3 text-base font-semibold text-white">{item.title}</h2>
                                     <p className="mt-2 text-sm leading-6 text-stone-400">{item.text}</p>
@@ -138,28 +192,9 @@ export default function HomePage() {
                         })}
                     </div>
                 </div>
-
-                <aside className="relative z-10">
-                    <div className="landing-auth-shell">
-                        {user ? (
-                            <div className="p-7">
-                                <div className="inline-flex size-11 items-center justify-center rounded-md bg-cyan-300 text-stone-950">
-                                    <CheckCircle2 className="size-6" />
-                                </div>
-                                <h2 className="mt-6 text-2xl font-semibold text-white">欢迎回来，{user.displayName || user.username}</h2>
-                                <p className="mt-3 text-sm leading-6 text-stone-400">你的账号已登录，可以直接进入画布继续创作。</p>
-                                <Button type="primary" size="large" href="/canvas" block className="mt-7" icon={<ArrowRight className="size-4" />} iconPlacement="end">
-                                    进入工作台
-                                </Button>
-                            </div>
-                        ) : (
-                            <AuthForm mode="login" variant="embedded" nextPath="/canvas" />
-                        )}
-                    </div>
-                </aside>
             </section>
 
-            <section className="relative z-10 mx-auto max-w-7xl px-6 pb-20">
+            <section className="relative z-10 mx-auto max-w-6xl px-6 pb-20">
                 <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-t border-white/10 pt-10">
                     <div>
                         <h2 className="text-3xl font-semibold text-white">沉淀每一次好结果</h2>
@@ -211,6 +246,46 @@ export default function HomePage() {
                     ))}
                 </div>
             </Image.PreviewGroup>
+
+            <Modal open={authOpen} footer={null} width={760} centered destroyOnHidden onCancel={() => setAuthOpen(false)} className="landing-auth-modal">
+                <div className="landing-auth-modal-shell">
+                    <section className="landing-auth-modal-brand">
+                        <div className="inline-flex items-center gap-3 text-white">
+                            <SiteLogo logoUrl={site.logoUrl} className="size-10" />
+                            <span className="text-xl font-semibold">{site.title || "VOZEB"}</span>
+                        </div>
+                        <div>
+                            <p className="text-sm font-medium text-cyan-200">Creator Access</p>
+                            <h2 className="mt-3 text-3xl font-semibold leading-tight text-white">进入你的 AI 创作工作台</h2>
+                            <p className="mt-4 text-sm leading-7 text-stone-300">登录后继续管理画布、素材、模型和提示词资产。</p>
+                        </div>
+                        <div className="grid gap-2 text-sm text-stone-300">
+                            {["无限画布编排", "远程提示词库", "用户额度与后台"].map((item) => (
+                                <div key={item} className="flex items-center gap-2">
+                                    <span className="size-1.5 rounded-full bg-cyan-300" />
+                                    <span>{item}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                    <div className="landing-auth-modal-form">
+                        <AuthForm mode="login" variant="embedded" nextPath="/canvas" className="min-h-0 bg-transparent p-0 shadow-none" />
+                    </div>
+                </div>
+            </Modal>
         </main>
+    );
+}
+
+function SiteLogo({ logoUrl, className }: { logoUrl: string; className: string }) {
+    if (logoUrl && logoUrl !== "/logo.svg") return <img src={logoUrl} alt="" className={cn(className, "shrink-0 object-contain")} />;
+    return (
+        <span
+            className={cn(className, "shrink-0 bg-white")}
+            style={{
+                mask: "url(/logo.svg) center / contain no-repeat",
+                WebkitMask: "url(/logo.svg) center / contain no-repeat",
+            }}
+        />
     );
 }

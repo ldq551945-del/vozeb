@@ -58,6 +58,7 @@ export function serializeCurrentUser(user: CurrentUser) {
 
 export function serializePublicSettings(settings: AuthSettings) {
     return {
+        site: settings.site,
         registrationEnabled: settings.registrationEnabled,
         allowUserApiConfig: settings.allowUserApiConfig,
         defaultQuota: settings.defaultQuota,

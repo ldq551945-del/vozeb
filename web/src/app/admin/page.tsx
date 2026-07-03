@@ -1,20 +1,21 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, LayoutDashboard } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
 
 import { AuthUserHydrator } from "@/components/auth/auth-user-hydrator";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
+import { AdminReturnButton } from "@/components/admin/admin-return-button";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { getAuthSettings, listPublicUsers } from "@/lib/auth/store";
 import { getCurrentUser } from "@/lib/auth/session";
-import { listAllLibraryPrompts } from "@/lib/prompts/store";
+import { countAllLibraryPrompts } from "@/lib/prompts/store";
 
 export default async function AdminPage() {
     const currentUser = await getCurrentUser();
     if (!currentUser) redirect("/login?next=/admin");
     if (currentUser.role !== "admin") redirect("/");
 
-    const [users, settings, prompts] = await Promise.all([listPublicUsers(), getAuthSettings(), listAllLibraryPrompts()]);
+    const [users, settings, promptCount] = await Promise.all([listPublicUsers(), getAuthSettings(), countAllLibraryPrompts()]);
 
     return (
         <AuthUserHydrator
@@ -57,15 +58,9 @@ export default async function AdminPage() {
                                 <p className="mt-1.5 max-w-2xl text-sm leading-6 text-stone-500 dark:text-stone-400">管理注册开关、用户状态、额度规则和系统接口配置。</p>
                             </div>
                         </div>
-                        <Link
-                            href="/canvas"
-                            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-stone-200 bg-white px-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:text-stone-950 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-300 dark:hover:border-stone-700 dark:hover:text-white"
-                        >
-                            <ArrowLeft className="size-4" />
-                            返回画布
-                        </Link>
+                        <AdminReturnButton />
                     </div>
-                    <AdminDashboard initialUsers={users} initialSettings={settings} initialPrompts={prompts} currentUser={currentUser} />
+                    <AdminDashboard initialUsers={users} initialSettings={settings} initialPromptCount={promptCount} currentUser={currentUser} />
                 </div>
             </main>
         </AuthUserHydrator>

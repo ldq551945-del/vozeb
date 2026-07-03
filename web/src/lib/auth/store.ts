@@ -34,6 +34,14 @@ export type SystemDefaultModels = {
     audioModel: string;
 };
 
+export type SiteSettings = {
+    title: string;
+    logoUrl: string;
+    seoTitle: string;
+    seoDescription: string;
+    seoKeywords: string;
+};
+
 export type PublicUser = {
     id: string;
     username: string;
@@ -78,6 +86,7 @@ type StoredCheckIn = {
 };
 
 export type AuthSettings = {
+    site: SiteSettings;
     registrationEnabled: boolean;
     allowUserApiConfig: boolean;
     defaultQuota: UserQuota;
@@ -114,7 +123,15 @@ export function isQuotaExceededError(error: unknown): error is QuotaExceededErro
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 export const DEFAULT_USER_QUOTA: UserQuota = { imageDaily: 100, videoDaily: 20, textDaily: 500, audioDaily: 100 };
 export const DEFAULT_CHECK_IN_REWARD: UserQuota = { imageDaily: 5, videoDaily: 1, textDaily: 20, audioDaily: 5 };
+export const DEFAULT_SITE_SETTINGS: SiteSettings = {
+    title: "VOZEB",
+    logoUrl: "/logo.svg",
+    seoTitle: "VOZEB",
+    seoDescription: "面向 AI 图片创作与管理的 VOZEB 工作台",
+    seoKeywords: "VOZEB,AI 绘图,无限画布,提示词库,素材管理",
+};
 const DEFAULT_SETTINGS: AuthSettings = {
+    site: DEFAULT_SITE_SETTINGS,
     registrationEnabled: true,
     allowUserApiConfig: true,
     defaultQuota: DEFAULT_USER_QUOTA,
@@ -387,6 +404,7 @@ function normalizeDisplayName(value: string) {
 function normalizeSettings(settings: AuthSettings): AuthSettings {
     const defaultQuota = normalizeQuota(settings.defaultQuota, DEFAULT_USER_QUOTA);
     return {
+        site: normalizeSiteSettings(settings.site),
         registrationEnabled: Boolean(settings.registrationEnabled),
         allowUserApiConfig: settings.allowUserApiConfig !== false,
         defaultQuota,
@@ -399,6 +417,30 @@ function normalizeSettings(settings: AuthSettings): AuthSettings {
             audioModel: settings.defaultModels?.audioModel || "",
         },
     };
+}
+
+function normalizeSiteSettings(settings: Partial<SiteSettings> | undefined): SiteSettings {
+    const title = normalizeText(settings?.title, DEFAULT_SITE_SETTINGS.title, 40);
+    const seoTitle = normalizeText(settings?.seoTitle, title, 72);
+    return {
+        title,
+        logoUrl: normalizeLogoUrl(settings?.logoUrl),
+        seoTitle,
+        seoDescription: normalizeText(settings?.seoDescription, DEFAULT_SITE_SETTINGS.seoDescription, 180),
+        seoKeywords: normalizeText(settings?.seoKeywords, DEFAULT_SITE_SETTINGS.seoKeywords, 240),
+    };
+}
+
+function normalizeText(value: unknown, fallback: string, maxLength: number) {
+    const text = typeof value === "string" ? value.trim() : "";
+    return (text || fallback).slice(0, maxLength);
+}
+
+function normalizeLogoUrl(value: unknown) {
+    const url = typeof value === "string" ? value.trim() : "";
+    if (!url) return DEFAULT_SITE_SETTINGS.logoUrl;
+    if (url.startsWith("/") || url.startsWith("https://") || url.startsWith("http://") || url.startsWith("data:image/")) return url.slice(0, 2000);
+    return DEFAULT_SITE_SETTINGS.logoUrl;
 }
 
 function normalizeSystemChannel(channel: Partial<SystemModelChannel>): SystemModelChannel {

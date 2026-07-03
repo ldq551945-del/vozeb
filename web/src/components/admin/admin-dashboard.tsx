@@ -1,10 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { App, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from "antd";
 import type { TableColumnsType } from "antd";
-import { Database, Gift, KeyRound, PlugZap, Plus, RefreshCw, Save, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserRound, UsersRound } from "lucide-react";
+import { Database, Download, Gift, Globe2, Image as ImageIcon, KeyRound, PlugZap, Plus, RefreshCw, Save, Search, ShieldCheck, SlidersHorizontal, Trash2, UserCog, UserRound, UsersRound } from "lucide-react";
 
 import type { AuthSettings, PublicUser, SystemModelChannel, UserQuota, UserRole, UserStatus } from "@/lib/auth/store";
 import type { Prompt } from "@/services/api/prompts";
@@ -12,7 +12,7 @@ import type { Prompt } from "@/services/api/prompts";
 type AdminDashboardProps = {
     initialUsers: PublicUser[];
     initialSettings: AuthSettings;
-    initialPrompts: Prompt[];
+    initialPromptCount: number;
     currentUser: PublicUser;
 };
 
@@ -31,19 +31,23 @@ type UserEditorValue = {
     quota: UserQuota;
 };
 
-type AdminSectionKey = "overview" | "settings" | "users" | "prompts";
+type AdminSectionKey = "overview" | "site" | "settings" | "users" | "prompts";
 
-export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, currentUser }: AdminDashboardProps) {
+export function AdminDashboard({ initialUsers, initialSettings, initialPromptCount, currentUser }: AdminDashboardProps) {
     const { message } = App.useApp();
     const [promptForm] = Form.useForm<PromptFormValue>();
     const [userForm] = Form.useForm<UserEditorValue>();
     const [users, setUsers] = useState(initialUsers);
     const [settings, setSettings] = useState(initialSettings);
-    const [prompts, setPrompts] = useState(initialPrompts);
+    const [prompts, setPrompts] = useState<Prompt[]>([]);
+    const [promptCount, setPromptCount] = useState(initialPromptCount);
     const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
     const [settingsLoading, setSettingsLoading] = useState(false);
+    const [backupLoading, setBackupLoading] = useState(false);
     const [fetchingModelId, setFetchingModelId] = useState("");
     const [promptSaving, setPromptSaving] = useState(false);
+    const [promptsLoading, setPromptsLoading] = useState(false);
+    const [promptsLoaded, setPromptsLoaded] = useState(false);
     const [deletingPromptId, setDeletingPromptId] = useState("");
     const [editingUser, setEditingUser] = useState<PublicUser | null>(null);
     const [activeSection, setActiveSection] = useState<AdminSectionKey>("overview");
@@ -65,6 +69,10 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
         [settings.systemChannels],
     );
 
+    useEffect(() => {
+        if (activeSection === "prompts" && !promptsLoaded && !promptsLoading) void loadPrompts();
+    }, [activeSection, promptsLoaded, promptsLoading]);
+
     const saveSettings = async (patch: Partial<AuthSettings>, successText = "设置已保存") => {
         setSettingsLoading(true);
         try {
@@ -81,6 +89,32 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
             message.error(error instanceof Error ? error.message : "更新设置失败");
         } finally {
             setSettingsLoading(false);
+        }
+    };
+
+    const downloadBackup = async () => {
+        setBackupLoading(true);
+        try {
+            const response = await fetch("/api/admin/backup");
+            if (!response.ok) {
+                const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+                throw new Error(payload?.error || "备份失败");
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            const date = new Date().toISOString().slice(0, 10);
+            link.href = url;
+            link.download = `vozeb-data-backup-${date}.json`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            message.success("用户数据库备份已下载");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "备份失败");
+        } finally {
+            setBackupLoading(false);
         }
     };
 
@@ -116,6 +150,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
             const payload = (await response.json()) as { prompt?: Prompt; error?: string };
             if (!response.ok || !payload.prompt) throw new Error(payload.error || "新增提示词失败");
             setPrompts((items) => [payload.prompt!, ...items]);
+            setPromptCount((count) => count + 1);
             promptForm.resetFields();
             message.success("公共提示词已新增");
         } catch (error) {
@@ -132,11 +167,28 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
             const payload = (await response.json()) as { error?: string };
             if (!response.ok) throw new Error(payload.error || "删除提示词失败");
             setPrompts((items) => items.filter((item) => item.id !== id));
+            setPromptCount((count) => Math.max(0, count - 1));
             message.success("公共提示词已删除");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "删除提示词失败");
         } finally {
             setDeletingPromptId("");
+        }
+    };
+
+    const loadPrompts = async () => {
+        setPromptsLoading(true);
+        try {
+            const response = await fetch("/api/admin/prompts");
+            const payload = (await response.json()) as { prompts?: Prompt[]; error?: string };
+            if (!response.ok || !payload.prompts) throw new Error(payload.error || "加载提示词失败");
+            setPrompts(payload.prompts);
+            setPromptCount(payload.prompts.length);
+            setPromptsLoaded(true);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "加载提示词失败");
+        } finally {
+            setPromptsLoading(false);
         }
     };
 
@@ -161,6 +213,10 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
 
     const updateCheckInReward = (key: keyof UserQuota, value: number | null) => {
         setSettings((current) => ({ ...current, checkInReward: { ...current.checkInReward, [key]: Number(value) || 0 } }));
+    };
+
+    const updateSiteSetting = (key: keyof AuthSettings["site"], value: string) => {
+        setSettings((current) => ({ ...current, site: { ...current.site, [key]: value } }));
     };
 
     const fetchModelsForChannel = async (channel: SystemModelChannel) => {
@@ -316,12 +372,96 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
                 </div>
 
                 {activeSection === "overview" ? (
-                    <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                        <Metric label="用户总数" value={stats.total} detail={`${stats.active} 个可用账号`} icon={<UsersRound className="size-5" />} tone="slate" />
-                        <Metric label="管理员" value={stats.admins} detail={`${stats.disabled} 个账号禁用`} icon={<ShieldCheck className="size-5" />} tone="blue" />
-                        <Metric label="通用接口" value={settingsSummary.enabledChannels} detail={`共 ${settingsSummary.totalChannels} 个渠道`} icon={<PlugZap className="size-5" />} tone="emerald" />
-                        <Metric label="公共提示词" value={prompts.length} detail={`${settingsSummary.models} 个模型已录入`} icon={<KeyRound className="size-5" />} tone="amber" />
-                    </section>
+                    <div className="space-y-5">
+                        <section className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                            <Metric label="用户总数" value={stats.total} detail={`${stats.active} 个可用账号`} icon={<UsersRound className="size-5" />} tone="slate" />
+                            <Metric label="管理员" value={stats.admins} detail={`${stats.disabled} 个账号禁用`} icon={<ShieldCheck className="size-5" />} tone="blue" />
+                            <Metric label="通用接口" value={settingsSummary.enabledChannels} detail={`共 ${settingsSummary.totalChannels} 个渠道`} icon={<PlugZap className="size-5" />} tone="emerald" />
+                            <Metric label="公共提示词" value={promptCount} detail={`${settingsSummary.models} 个模型已录入`} icon={<KeyRound className="size-5" />} tone="amber" />
+                        </section>
+                        <Panel>
+                            <PanelHeader
+                                title="数据备份"
+                                description="下载服务端用户数据库与公共提示词备份，适合升级镜像、迁移服务器前留底。"
+                                actions={
+                                    <Button loading={backupLoading} icon={<Download className="size-4" />} onClick={() => void downloadBackup()}>
+                                        备份用户数据库
+                                    </Button>
+                                }
+                            />
+                            <div className="grid gap-3 p-4 text-sm leading-6 text-stone-500 sm:grid-cols-2 sm:p-5 dark:text-stone-400">
+                                <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40">备份包含 `.data/auth.json`，也就是账号、密码哈希、角色、额度、签到和网站设置。</div>
+                                <div className="rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40">备份同时包含 `.data/prompts.json`，用于保留管理员公共提示词库。</div>
+                            </div>
+                        </Panel>
+                    </div>
+                ) : null}
+
+                {activeSection === "site" ? (
+                    <Panel>
+                        <PanelHeader
+                            title="网站设置"
+                            description="统一管理前台品牌、Logo、浏览器标题和搜索引擎展示信息。"
+                            actions={
+                                <Button type="primary" loading={settingsLoading} icon={<Save className="size-4" />} onClick={() => saveSettings({ site: settings.site }, "网站信息已保存")}>
+                                    保存网站设置
+                                </Button>
+                            }
+                        />
+                        <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_360px] sm:p-5">
+                            <div className="space-y-5 rounded-lg border border-stone-200 bg-stone-50/70 p-4 dark:border-stone-800 dark:bg-stone-900/40">
+                                <SectionTitle icon={<Globe2 className="size-4" />} title="基础信息" />
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <LabeledControl label="网站标题">
+                                        <Input value={settings.site.title} maxLength={40} placeholder="VOZEB" onChange={(event) => updateSiteSetting("title", event.target.value)} />
+                                    </LabeledControl>
+                                    <LabeledControl label="Logo URL">
+                                        <Input value={settings.site.logoUrl} maxLength={2000} placeholder="/logo.svg 或 https://..." onChange={(event) => updateSiteSetting("logoUrl", event.target.value)} />
+                                    </LabeledControl>
+                                </div>
+                                <div className="rounded-md border border-dashed border-stone-300 bg-white p-3 text-xs leading-5 text-stone-500 dark:border-stone-700 dark:bg-stone-950 dark:text-stone-400">
+                                    Logo 支持站内路径、远程 URL 或 data:image。Docker 部署时建议使用远程图床或把文件放到镜像内的 public 目录。
+                                </div>
+
+                                <div className="border-t border-stone-200 pt-5 dark:border-stone-800">
+                                    <SectionTitle icon={<Search className="size-4" />} title="SEO 信息" />
+                                    <div className="mt-4 space-y-4">
+                                        <LabeledControl label="SEO 标题">
+                                            <Input value={settings.site.seoTitle} maxLength={72} placeholder={settings.site.title} onChange={(event) => updateSiteSetting("seoTitle", event.target.value)} />
+                                        </LabeledControl>
+                                        <LabeledControl label="SEO 描述">
+                                            <Input.TextArea value={settings.site.seoDescription} maxLength={180} rows={4} placeholder="用于搜索结果和社交分享摘要" onChange={(event) => updateSiteSetting("seoDescription", event.target.value)} />
+                                        </LabeledControl>
+                                        <LabeledControl label="SEO 关键词">
+                                            <Input value={settings.site.seoKeywords} maxLength={240} placeholder="VOZEB,AI 绘图,无限画布" onChange={(event) => updateSiteSetting("seoKeywords", event.target.value)} />
+                                        </LabeledControl>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
+                                    <SectionTitle icon={<ImageIcon className="size-4" />} title="前台预览" />
+                                    <div className="mt-5 rounded-lg bg-stone-950 p-5 text-white">
+                                        <div className="flex items-center gap-3">
+                                            <SiteLogoPreview logoUrl={settings.site.logoUrl} />
+                                            <div className="min-w-0">
+                                                <div className="truncate text-lg font-semibold">{settings.site.title || "VOZEB"}</div>
+                                                <div className="mt-1 text-xs text-stone-400">首页导航品牌</div>
+                                            </div>
+                                        </div>
+                                        <div className="mt-6 border-t border-white/10 pt-4">
+                                            <div className="text-base font-semibold">{settings.site.seoTitle || settings.site.title}</div>
+                                            <p className="mt-2 line-clamp-3 text-sm leading-6 text-stone-400">{settings.site.seoDescription}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="rounded-lg border border-cyan-200/60 bg-cyan-50 p-4 text-sm leading-6 text-cyan-900 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-100">
+                                    保存后首页、顶部导航、浏览器标题、Open Graph 和 favicon 会同步读取这里的配置。
+                                </div>
+                            </div>
+                        </div>
+                    </Panel>
                 ) : null}
 
                 {activeSection === "settings" ? (
@@ -469,7 +609,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPrompts, 
                                     插入公共提示词
                                 </Button>
                             </Form>
-                            <Table rowKey="id" columns={promptColumns} dataSource={prompts} pagination={{ pageSize: 6, hideOnSinglePage: true }} size="middle" />
+                            <Table rowKey="id" columns={promptColumns} dataSource={prompts} loading={promptsLoading} pagination={{ pageSize: 6, hideOnSinglePage: true }} size="middle" />
                         </div>
                     </Panel>
                 ) : null}
@@ -535,15 +675,15 @@ function AdminSectionNav({ activeKey, onChange }: { activeKey: AdminSectionKey; 
                                 type="button"
                                 className={`flex min-w-36 items-center gap-3 rounded-md px-3 py-3 text-left transition xl:min-w-0 ${
                                     active
-                                        ? "bg-stone-950 text-white shadow-sm dark:bg-stone-900 dark:text-stone-100 dark:ring-1 dark:ring-stone-700"
+                                        ? "bg-stone-950 !text-white shadow-sm dark:bg-stone-900 dark:!text-white dark:ring-1 dark:ring-stone-700"
                                         : "text-stone-600 hover:bg-stone-100 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-stone-900 dark:hover:text-white"
                                 }`}
                                 onClick={() => onChange(section.key)}
                             >
-                                <span className={`flex size-8 shrink-0 items-center justify-center rounded-md ${active ? "bg-white/15 dark:bg-stone-800" : "bg-stone-100 dark:bg-stone-900"}`}>{section.icon}</span>
+                                <span className={`flex size-8 shrink-0 items-center justify-center rounded-md ${active ? "bg-white/15 !text-white dark:bg-stone-800" : "bg-stone-100 dark:bg-stone-900"}`}>{section.icon}</span>
                                 <span className="min-w-0">
-                                    <span className="block text-sm font-semibold">{section.label}</span>
-                                    <span className={`mt-0.5 block truncate text-xs ${active ? "text-white/70 dark:text-stone-400" : "text-stone-500 dark:text-stone-500"}`}>{section.shortDescription}</span>
+                                    <span className={`block text-sm font-semibold ${active ? "!text-white" : ""}`}>{section.label}</span>
+                                    <span className={`mt-0.5 block truncate text-xs ${active ? "!text-white/75" : "text-stone-500 dark:text-stone-500"}`}>{section.shortDescription}</span>
                                 </span>
                             </button>
                         );
@@ -714,6 +854,19 @@ function QuotaSummary({ quota }: { quota: UserQuota }) {
     );
 }
 
+function SiteLogoPreview({ logoUrl }: { logoUrl: string }) {
+    if (logoUrl) return <img src={logoUrl} alt="" className="size-12 rounded-md bg-white/10 object-contain p-1" referrerPolicy="no-referrer" />;
+    return (
+        <span
+            className="size-12 rounded-md bg-white"
+            style={{
+                mask: "url(/logo.svg) center / 78% no-repeat",
+                WebkitMask: "url(/logo.svg) center / 78% no-repeat",
+            }}
+        />
+    );
+}
+
 function createSystemChannel(): SystemModelChannel {
     return { id: crypto.randomUUID(), name: "默认渠道", baseUrl: "", apiKey: "", apiFormat: "openai", models: [], enabled: true };
 }
@@ -775,6 +928,7 @@ const defaultModelKeys = [
 
 const adminSections: Array<{ key: AdminSectionKey; label: string; description: string; shortDescription: string; icon: ReactNode }> = [
     { key: "overview", label: "概览", description: "快速查看用户、接口、模型和公共提示词状态。", shortDescription: "关键数据", icon: <Database className="size-4" /> },
+    { key: "site", label: "网站设置", description: "管理前台网站标题、Logo、SEO 标题、描述和关键词。", shortDescription: "品牌与 SEO", icon: <Globe2 className="size-4" /> },
     { key: "settings", label: "系统设置", description: "管理注册策略、签到额度、通用接口和默认模型。", shortDescription: "账号与接口", icon: <SlidersHorizontal className="size-4" /> },
     { key: "users", label: "用户管理", description: "调整用户角色、账号状态和每日额度。", shortDescription: "角色额度", icon: <UsersRound className="size-4" /> },
     { key: "prompts", label: "提示词库", description: "维护会出现在用户端提示词库里的公共提示词。", shortDescription: "公共内容", icon: <KeyRound className="size-4" /> },

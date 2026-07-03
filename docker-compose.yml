@@ -4,4 +4,9 @@ services:
     container_name: vozeb
     ports:
       - "3000:3000"
+    volumes:
+      - vozeb-data:/app/web/.data
     restart: unless-stopped
+
+volumes:
+  vozeb-data:

@@ -3,21 +3,36 @@
 import { Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+
+type PublicSiteSettings = {
+    title: string;
+    logoUrl: string;
+};
 
 export function AppTopNav() {
     const pathname = usePathname();
     const router = useRouter();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [site, setSite] = useState<PublicSiteSettings>({ title: "VOZEB", logoUrl: "/logo.svg" });
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
+
+    useEffect(() => {
+        void fetch("/api/auth/session")
+            .then((response) => response.json() as Promise<{ settings?: { site?: PublicSiteSettings } }>)
+            .then((payload) => {
+                if (payload.settings?.site) setSite(payload.settings.site);
+            })
+            .catch(() => undefined);
+    }, []);
 
     return (
         <>
@@ -26,14 +41,8 @@ export function AppTopNav() {
                     <div className="mx-auto flex h-full max-w-7xl items-stretch justify-between gap-5 px-6">
                         <div className="flex min-w-0 items-center">
                             <Link href="/" className="flex h-full shrink-0 items-center gap-2.5 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
-                                <span
-                                    className="size-8 shrink-0 bg-stone-950 dark:bg-white"
-                                    style={{
-                                        mask: "url(/logo.svg) center / contain no-repeat",
-                                        WebkitMask: "url(/logo.svg) center / contain no-repeat",
-                                    }}
-                                />
-                                <span className="text-lg font-medium">VOZEB</span>
+                                <SiteLogo logoUrl={site.logoUrl} className="size-8" />
+                                <span className="text-lg font-medium">{site.title || "VOZEB"}</span>
                             </Link>
 
                             <button
@@ -82,5 +91,18 @@ export function AppTopNav() {
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
             <AppConfigModal />
         </>
+    );
+}
+
+function SiteLogo({ logoUrl, className }: { logoUrl: string; className: string }) {
+    if (logoUrl && logoUrl !== "/logo.svg") return <img src={logoUrl} alt="" className={cn(className, "shrink-0 object-contain")} />;
+    return (
+        <span
+            className={cn(className, "shrink-0 bg-stone-950 dark:bg-white")}
+            style={{
+                mask: "url(/logo.svg) center / contain no-repeat",
+                WebkitMask: "url(/logo.svg) center / contain no-repeat",
+            }}
+        />
     );
 }
