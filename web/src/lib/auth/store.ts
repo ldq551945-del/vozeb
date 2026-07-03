@@ -1,0 +1,504 @@
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+
+import { hashPassword, verifyPassword } from "./password";
+
+export type UserRole = "admin" | "user";
+export type UserStatus = "active" | "disabled";
+export type ApiCallFormat = "openai" | "gemini";
+
+export type UserQuota = {
+    imageDaily: number;
+    videoDaily: number;
+    textDaily: number;
+    audioDaily: number;
+};
+
+export type QuotaKind = "image" | "video" | "text" | "audio";
+
+export type SystemModelChannel = {
+    id: string;
+    name: string;
+    baseUrl: string;
+    apiKey: string;
+    apiFormat: ApiCallFormat;
+    models: string[];
+    enabled: boolean;
+};
+
+export type SystemDefaultModels = {
+    imageModel: string;
+    videoModel: string;
+    textModel: string;
+    audioModel: string;
+};
+
+export type PublicUser = {
+    id: string;
+    username: string;
+    displayName: string;
+    role: UserRole;
+    status: UserStatus;
+    quota: UserQuota;
+    checkedInToday: boolean;
+    lastCheckInDate?: string;
+    createdAt: string;
+    updatedAt: string;
+    lastLoginAt?: string;
+};
+
+type StoredUser = Omit<PublicUser, "checkedInToday" | "lastCheckInDate"> & {
+    passwordHash: string;
+};
+
+type StoredSession = {
+    id: string;
+    userId: string;
+    tokenHash: string;
+    createdAt: string;
+    expiresAt: string;
+};
+
+type StoredQuotaUsage = {
+    userId: string;
+    date: string;
+    imageDaily: number;
+    videoDaily: number;
+    textDaily: number;
+    audioDaily: number;
+    updatedAt: string;
+};
+
+type StoredCheckIn = {
+    userId: string;
+    date: string;
+    reward: UserQuota;
+    createdAt: string;
+};
+
+export type AuthSettings = {
+    registrationEnabled: boolean;
+    allowUserApiConfig: boolean;
+    defaultQuota: UserQuota;
+    checkInReward: UserQuota;
+    systemChannels: SystemModelChannel[];
+    defaultModels: SystemDefaultModels;
+};
+
+type AuthDatabase = {
+    version: 1;
+    users: StoredUser[];
+    sessions: StoredSession[];
+    quotaUsage: StoredQuotaUsage[];
+    checkIns: StoredCheckIn[];
+    settings: AuthSettings;
+};
+
+export class AuthInputError extends Error {
+    status = 400;
+}
+
+export class QuotaExceededError extends Error {
+    status = 429;
+}
+
+export function isAuthInputError(error: unknown): error is AuthInputError {
+    return Boolean(error && typeof error === "object" && (error as { status?: unknown }).status === 400);
+}
+
+export function isQuotaExceededError(error: unknown): error is QuotaExceededError {
+    return Boolean(error && typeof error === "object" && (error as { status?: unknown }).status === 429);
+}
+
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const DEFAULT_USER_QUOTA: UserQuota = { imageDaily: 100, videoDaily: 20, textDaily: 500, audioDaily: 100 };
+export const DEFAULT_CHECK_IN_REWARD: UserQuota = { imageDaily: 5, videoDaily: 1, textDaily: 20, audioDaily: 5 };
+const DEFAULT_SETTINGS: AuthSettings = {
+    registrationEnabled: true,
+    allowUserApiConfig: true,
+    defaultQuota: DEFAULT_USER_QUOTA,
+    checkInReward: DEFAULT_CHECK_IN_REWARD,
+    systemChannels: [],
+    defaultModels: { imageModel: "", videoModel: "", textModel: "", audioModel: "" },
+};
+const AUTH_DATA_FILE = resolve(process.cwd(), ".data", "auth.json");
+const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
+
+let mutationQueue = Promise.resolve();
+
+export function sessionMaxAgeSeconds() {
+    return SESSION_MAX_AGE_SECONDS;
+}
+
+export async function getAuthSettings() {
+    return (await readAuthDb()).settings;
+}
+
+export async function setAuthSettings(patch: Partial<AuthSettings>) {
+    return mutateAuthDb((db) => {
+        db.settings = normalizeSettings({ ...db.settings, ...patch });
+        return db.settings;
+    });
+}
+
+export async function listPublicUsers() {
+    const db = await readAuthDb();
+    return db.users.map((user) => toPublicUser(user, db)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
+export async function checkInUser(userId: string) {
+    return mutateAuthDb((db) => {
+        const user = db.users.find((item) => item.id === userId);
+        if (!user || user.status !== "active") throw new AuthInputError("账号不可用");
+
+        const today = currentQuotaDate();
+        if (db.checkIns.some((item) => item.userId === userId && item.date === today)) throw new AuthInputError("今天已经签到过了");
+
+        const reward = normalizeQuota(db.settings.checkInReward, DEFAULT_CHECK_IN_REWARD);
+        user.quota = addQuota(normalizeQuota(user.quota, db.settings.defaultQuota), reward);
+        user.updatedAt = new Date().toISOString();
+        db.checkIns.push({ userId, date: today, reward, createdAt: user.updatedAt });
+        return { user: toPublicUser(user, db), reward, date: today };
+    });
+}
+
+export async function consumeUserQuota(userId: string, kind: QuotaKind, amount = 1) {
+    return mutateAuthDb((db) => {
+        const user = db.users.find((item) => item.id === userId);
+        if (!user || user.status !== "active") throw new AuthInputError("账号不可用");
+
+        const quotaKey = quotaKeyByKind(kind);
+        const quota = normalizeQuota(user.quota, db.settings.defaultQuota);
+        const requested = Math.max(1, Math.min(1000, Math.floor(Number(amount) || 1)));
+        const today = currentQuotaDate();
+        const now = new Date().toISOString();
+        let usage = db.quotaUsage.find((item) => item.userId === userId && item.date === today);
+        if (!usage) {
+            usage = { userId, date: today, imageDaily: 0, videoDaily: 0, textDaily: 0, audioDaily: 0, updatedAt: now };
+            db.quotaUsage.push(usage);
+        }
+
+        if (usage[quotaKey] + requested > quota[quotaKey]) {
+            throw new QuotaExceededError(`今日${quotaKindLabel(kind)}额度不足，剩余 ${Math.max(0, quota[quotaKey] - usage[quotaKey])}`);
+        }
+
+        usage[quotaKey] += requested;
+        usage.updatedAt = now;
+        return { date: today, used: usage[quotaKey], limit: quota[quotaKey], remaining: Math.max(0, quota[quotaKey] - usage[quotaKey]) };
+    });
+}
+
+export async function createUser(input: { username: string; displayName?: string; password: string }) {
+    return mutateAuthDb((db) => {
+        const username = normalizeUsername(input.username);
+        const displayName = normalizeDisplayName(input.displayName || username);
+        validateUsername(username);
+        validatePassword(input.password);
+
+        const firstUser = db.users.length === 0;
+        if (!firstUser && !db.settings.registrationEnabled) throw new AuthInputError("当前站点已关闭注册");
+        if (db.users.some((user) => user.username.toLowerCase() === username.toLowerCase())) throw new AuthInputError("用户名已存在");
+
+        const now = new Date().toISOString();
+        const user: StoredUser = {
+            id: randomUUID(),
+            username,
+            displayName,
+            role: firstUser ? "admin" : "user",
+            status: "active",
+            quota: db.settings.defaultQuota,
+            passwordHash: hashPassword(input.password),
+            createdAt: now,
+            updatedAt: now,
+        };
+        db.users.push(user);
+        return toPublicUser(user, db);
+    });
+}
+
+export async function authenticateUser(input: { username: string; password: string }) {
+    const username = normalizeUsername(input.username);
+    const db = await readAuthDb();
+    const user = db.users.find((item) => item.username.toLowerCase() === username.toLowerCase());
+    if (!user || !verifyPassword(input.password, user.passwordHash)) throw new AuthInputError("用户名或密码不正确");
+    if (user.status !== "active") throw new AuthInputError("该账号已被禁用");
+
+    await mutateAuthDb((nextDb) => {
+        const nextUser = nextDb.users.find((item) => item.id === user.id);
+        if (nextUser) {
+            nextUser.lastLoginAt = new Date().toISOString();
+            nextUser.updatedAt = nextUser.lastLoginAt;
+        }
+    });
+
+    return toPublicUser({ ...user, lastLoginAt: new Date().toISOString() }, db);
+}
+
+export async function createSession(userId: string) {
+    return mutateAuthDb((db) => {
+        const user = db.users.find((item) => item.id === userId);
+        if (!user || user.status !== "active") throw new AuthInputError("账号不可用");
+
+        const now = new Date();
+        const sessionId = randomUUID();
+        const token = randomBytes(32).toString("base64url");
+        db.sessions.push({
+            id: sessionId,
+            userId,
+            tokenHash: hashToken(token),
+            createdAt: now.toISOString(),
+            expiresAt: new Date(now.getTime() + SESSION_MAX_AGE_SECONDS * 1000).toISOString(),
+        });
+        return `${sessionId}.${token}`;
+    });
+}
+
+export async function getUserBySession(cookieValue: string | undefined) {
+    const sessionParts = parseSessionCookie(cookieValue);
+    if (!sessionParts) return null;
+
+    const db = await readAuthDb();
+    const session = db.sessions.find((item) => item.id === sessionParts.id);
+    if (!session || session.tokenHash !== hashToken(sessionParts.token) || Date.parse(session.expiresAt) <= Date.now()) return null;
+    const user = db.users.find((item) => item.id === session.userId);
+    if (!user || user.status !== "active") return null;
+    return toPublicUser(user, db);
+}
+
+export async function deleteSession(cookieValue: string | undefined) {
+    const sessionParts = parseSessionCookie(cookieValue);
+    if (!sessionParts) return;
+    await mutateAuthDb((db) => {
+        db.sessions = db.sessions.filter((item) => item.id !== sessionParts.id);
+    });
+}
+
+export async function updateUserByAdmin(actorId: string, userId: string, patch: Partial<Pick<PublicUser, "displayName" | "role" | "status">> & { quota?: Partial<UserQuota> }) {
+    return mutateAuthDb((db) => {
+        const user = db.users.find((item) => item.id === userId);
+        if (!user) throw new AuthInputError("用户不存在");
+        if (user.id === actorId && patch.status === "disabled") throw new AuthInputError("不能禁用当前管理员账号");
+
+        const nextRole = patch.role || user.role;
+        const nextStatus = patch.status || user.status;
+        if (user.role === "admin" && nextRole !== "admin" && countActiveAdmins(db, user.id) === 0) throw new AuthInputError("至少需要保留一个管理员");
+        if (user.role === "admin" && nextStatus !== "active" && countActiveAdmins(db, user.id) === 0) throw new AuthInputError("至少需要保留一个可用管理员");
+
+        if (patch.displayName !== undefined) user.displayName = normalizeDisplayName(patch.displayName || user.username);
+        user.role = nextRole;
+        user.status = nextStatus;
+        if (patch.quota) user.quota = normalizeQuota(patch.quota, db.settings.defaultQuota);
+        user.updatedAt = new Date().toISOString();
+        if (user.status !== "active") db.sessions = db.sessions.filter((session) => session.userId !== user.id);
+        return toPublicUser(user, db);
+    });
+}
+
+function toPublicUser(user: StoredUser, db?: AuthDatabase): PublicUser {
+    const checkIn = db ? userCheckInState(db, user.id) : { checkedInToday: false, lastCheckInDate: undefined };
+    return {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+        status: user.status,
+        quota: normalizeQuota(user.quota, DEFAULT_USER_QUOTA),
+        checkedInToday: checkIn.checkedInToday,
+        lastCheckInDate: checkIn.lastCheckInDate,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLoginAt: user.lastLoginAt,
+    };
+}
+
+async function readAuthDb(): Promise<AuthDatabase> {
+    try {
+        const raw = await readFile(AUTH_DATA_FILE, "utf8");
+        return normalizeDb(JSON.parse(raw) as Partial<AuthDatabase>);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyDb();
+        throw error;
+    }
+}
+
+async function mutateAuthDb<T>(mutator: (db: AuthDatabase) => T | Promise<T>) {
+    const run = mutationQueue.then(async () => {
+        const db = pruneExpiredSessions(await readAuthDb());
+        const result = await mutator(db);
+        await writeAuthDb(db);
+        return result;
+    });
+    mutationQueue = run.then(
+        () => undefined,
+        () => undefined,
+    );
+    return run;
+}
+
+async function writeAuthDb(db: AuthDatabase) {
+    await mkdir(dirname(AUTH_DATA_FILE), { recursive: true });
+    await writeFile(AUTH_DATA_FILE, `${JSON.stringify(db, null, 2)}\n`, "utf8");
+}
+
+function normalizeDb(db: Partial<AuthDatabase>): AuthDatabase {
+    const settings = normalizeSettings({ ...DEFAULT_SETTINGS, ...(db.settings || {}) });
+    return pruneExpiredSessions({
+        version: 1,
+        users: Array.isArray(db.users)
+            ? db.users.map((user) => ({
+                  ...user,
+                  quota: normalizeQuota(user.quota, settings.defaultQuota),
+              }))
+            : [],
+        sessions: Array.isArray(db.sessions) ? db.sessions : [],
+        quotaUsage: Array.isArray(db.quotaUsage) ? db.quotaUsage.map(normalizeQuotaUsage).filter(Boolean) : [],
+        checkIns: Array.isArray(db.checkIns) ? db.checkIns.map(normalizeCheckIn).filter((item) => item.userId) : [],
+        settings,
+    });
+}
+
+function emptyDb(): AuthDatabase {
+    return { version: 1, users: [], sessions: [], quotaUsage: [], checkIns: [], settings: DEFAULT_SETTINGS };
+}
+
+function pruneExpiredSessions(db: AuthDatabase) {
+    const now = Date.now();
+    db.sessions = db.sessions.filter((session) => Date.parse(session.expiresAt) > now);
+    const minDate = new Date(now - 1000 * 60 * 60 * 24 * 45).toISOString().slice(0, 10);
+    db.quotaUsage = db.quotaUsage.filter((usage) => usage.date >= minDate);
+    const minCheckInDate = new Date(now - 1000 * 60 * 60 * 24 * 365).toISOString().slice(0, 10);
+    db.checkIns = db.checkIns.filter((checkIn) => checkIn.date >= minCheckInDate);
+    return db;
+}
+
+function countActiveAdmins(db: AuthDatabase, excludingUserId?: string) {
+    return db.users.filter((user) => user.id !== excludingUserId && user.role === "admin" && user.status === "active").length;
+}
+
+function normalizeUsername(value: string) {
+    return value.trim();
+}
+
+function normalizeDisplayName(value: string) {
+    return value.trim().slice(0, 40);
+}
+
+function normalizeSettings(settings: AuthSettings): AuthSettings {
+    const defaultQuota = normalizeQuota(settings.defaultQuota, DEFAULT_USER_QUOTA);
+    return {
+        registrationEnabled: Boolean(settings.registrationEnabled),
+        allowUserApiConfig: settings.allowUserApiConfig !== false,
+        defaultQuota,
+        checkInReward: normalizeQuota(settings.checkInReward, DEFAULT_CHECK_IN_REWARD),
+        systemChannels: Array.isArray(settings.systemChannels) ? settings.systemChannels.map(normalizeSystemChannel).filter((channel) => channel.name || channel.baseUrl || channel.models.length) : [],
+        defaultModels: {
+            imageModel: settings.defaultModels?.imageModel || "",
+            videoModel: settings.defaultModels?.videoModel || "",
+            textModel: settings.defaultModels?.textModel || "",
+            audioModel: settings.defaultModels?.audioModel || "",
+        },
+    };
+}
+
+function normalizeSystemChannel(channel: Partial<SystemModelChannel>): SystemModelChannel {
+    return {
+        id: channel.id?.trim() || randomUUID(),
+        name: channel.name?.trim() || "默认渠道",
+        baseUrl: channel.baseUrl?.trim() || "",
+        apiKey: channel.apiKey || "",
+        apiFormat: "openai",
+        models: Array.from(new Set((channel.models || []).map((model) => model.trim()).filter(Boolean))),
+        enabled: channel.enabled !== false,
+    };
+}
+
+function normalizeQuota(quota: Partial<UserQuota> | undefined, fallback: UserQuota): UserQuota {
+    return {
+        imageDaily: normalizeQuotaNumber(quota?.imageDaily, fallback.imageDaily),
+        videoDaily: normalizeQuotaNumber(quota?.videoDaily, fallback.videoDaily),
+        textDaily: normalizeQuotaNumber(quota?.textDaily, fallback.textDaily),
+        audioDaily: normalizeQuotaNumber(quota?.audioDaily, fallback.audioDaily),
+    };
+}
+
+function normalizeQuotaNumber(value: unknown, fallback: number) {
+    const numberValue = Math.floor(Number(value));
+    if (!Number.isFinite(numberValue) || numberValue < 0) return fallback;
+    return Math.min(numberValue, 1_000_000);
+}
+
+function normalizeQuotaUsage(value: Partial<StoredQuotaUsage>): StoredQuotaUsage {
+    return {
+        userId: value.userId || "",
+        date: /^\d{4}-\d{2}-\d{2}$/.test(value.date || "") ? value.date! : currentQuotaDate(),
+        imageDaily: normalizeQuotaNumber(value.imageDaily, 0),
+        videoDaily: normalizeQuotaNumber(value.videoDaily, 0),
+        textDaily: normalizeQuotaNumber(value.textDaily, 0),
+        audioDaily: normalizeQuotaNumber(value.audioDaily, 0),
+        updatedAt: value.updatedAt || new Date().toISOString(),
+    };
+}
+
+function normalizeCheckIn(value: Partial<StoredCheckIn>): StoredCheckIn {
+    return {
+        userId: value.userId || "",
+        date: /^\d{4}-\d{2}-\d{2}$/.test(value.date || "") ? value.date! : currentQuotaDate(),
+        reward: normalizeQuota(value.reward, DEFAULT_CHECK_IN_REWARD),
+        createdAt: value.createdAt || new Date().toISOString(),
+    };
+}
+
+function addQuota(current: UserQuota, reward: UserQuota): UserQuota {
+    return {
+        imageDaily: normalizeQuotaNumber(current.imageDaily + reward.imageDaily, current.imageDaily),
+        videoDaily: normalizeQuotaNumber(current.videoDaily + reward.videoDaily, current.videoDaily),
+        textDaily: normalizeQuotaNumber(current.textDaily + reward.textDaily, current.textDaily),
+        audioDaily: normalizeQuotaNumber(current.audioDaily + reward.audioDaily, current.audioDaily),
+    };
+}
+
+function userCheckInState(db: AuthDatabase, userId: string) {
+    const today = currentQuotaDate();
+    const dates = db.checkIns.filter((item) => item.userId === userId).map((item) => item.date).sort();
+    const lastCheckInDate = dates[dates.length - 1];
+    return { checkedInToday: lastCheckInDate === today, lastCheckInDate };
+}
+
+function quotaKeyByKind(kind: QuotaKind): keyof UserQuota {
+    if (kind === "video") return "videoDaily";
+    if (kind === "text") return "textDaily";
+    if (kind === "audio") return "audioDaily";
+    return "imageDaily";
+}
+
+function quotaKindLabel(kind: QuotaKind) {
+    if (kind === "video") return "视频";
+    if (kind === "text") return "文本";
+    if (kind === "audio") return "音频";
+    return "图片";
+}
+
+function currentQuotaDate() {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+}
+
+function validateUsername(username: string) {
+    if (!USERNAME_PATTERN.test(username)) throw new AuthInputError("用户名需为 3-32 位字母、数字、下划线、点或短横线");
+}
+
+function validatePassword(password: string) {
+    if (password.length < 8) throw new AuthInputError("密码至少需要 8 位");
+    if (password.length > 128) throw new AuthInputError("密码不能超过 128 位");
+}
+
+function parseSessionCookie(cookieValue: string | undefined) {
+    if (!cookieValue) return null;
+    const separatorIndex = cookieValue.indexOf(".");
+    if (separatorIndex < 0) return null;
+    return { id: cookieValue.slice(0, separatorIndex), token: cookieValue.slice(separatorIndex + 1) };
+}
+
+function hashToken(token: string) {
+    return createHash("sha256").update(token).digest("hex");
+}
