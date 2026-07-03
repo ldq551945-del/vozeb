@@ -12,25 +12,80 @@
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
 </p>
 
-Vozeb 是一款面向 AI 图片创作和素材管理的开源工作台。它把无限画布、AI 生成、提示词库、素材沉淀、用户权限和本地 Agent 能力放到同一个工作流里，适合个人创作者或小团队持续迭代视觉方案。
+Vozeb 是一款面向 AI 图片创作、素材管理和视觉方案迭代的开源工作台。它把无限画布、AI 生成、参考图编辑、提示词库、素材沉淀、用户权限、管理员配置和本地 Agent 能力放到同一个工作流里，适合个人创作者、本地部署场景和小团队内部使用。
+
+Vozeb 当前版本为 `v0.5.0`，这是基于原开源项目 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 继续开发的二开版本。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
 
 > [!CAUTION]
 > 项目仍处于快速开发阶段，不保证历史数据兼容。当前更适合个人或本地部署，不建议直接公网多人共用。
 
-## 最新功能
+## 功能总览
 
-- 无限画布：支持多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
-- AI 创作：支持文生图、图生图、参考图编辑、文本问答、音频生成和视频生成；Seedance 2.0 可通过火山方舟 Agent Plan 接入。
-- 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回画布。
-- 用户系统：支持注册开关、管理员后台、用户角色、账号状态、每日额度和签到奖励。
+- 无限画布：多画布项目、节点拖拽缩放、连线、小地图、撤销重做、导入导出。
+- AI 图片创作：支持文生图、图生图、参考图编辑、图片反推提示词、图片切图、局部蒙版修改和图片放大。
+- 音频与视频：支持音频节点、视频生成、声音/水印配置，以及图片、视频、音频参考输入。
+- 画布助手：围绕选中节点和上游节点对话、生图，并把结果插回当前画布。
+- 提示词库：支持公共提示词库、我的提示词、标签、分类、封面和提示词素材沉淀。
+- 素材管理：支持图片、文本、视频等素材保存、复用、导入导出和 WebDAV 同步。
+- 用户系统：支持账号密码注册登录、管理员后台、用户角色、账号状态、每日额度和签到奖励。
 - 通用接口：管理员可配置 OpenAI 兼容接口、系统模型渠道、默认模型，并允许或禁止用户自配接口。
-- 提示词库：支持公共提示词管理、我的提示词、提示词标签和封面展示。
-- 素材管理：支持本地素材沉淀、图片/文本/视频素材复用、导入导出和 WebDAV 同步。
 - 本地 Agent：通过本机 Canvas Agent 连接 Codex / Claude Code，让 Agent 通过 MCP 操作当前画布。
 - Codex App 插件：提供 Codex app 插件，安装后可自动注册 MCP 并尝试拉起本地 Agent。
-- 管理体验：后台管理页已改为侧边栏切换，顶部通知和签到反馈做了位置与视觉优化。
+- 版本更新：右上角版本入口可查看更新记录，并从 `csyqlz/vozeb` 检查最新版本。
 
-完整功能说明见 [功能介绍](docs/content/docs/overview/features.mdx)。
+## v0.5.0 更新
+
+- 项目品牌更新为 Vozeb，GitHub 链接、版本检查地址和文档配置切换到 `csyqlz/vozeb`。
+- 版本定义为 `v0.5.0`，版本弹窗新增二开说明、原作者信息和当前功能记录。
+- 管理员后台改为侧边栏切换布局，支持概览、系统设置、用户管理和公共提示词库分区管理。
+- 管理后台可集中管理注册开关、签到奖励、用户额度、系统接口渠道、默认模型和公共提示词。
+- 签到成功等全局通知下移到顶部导航下方，并统一浅色/深色通知样式。
+- 后台侧栏选中态适配深色主题，避免点击后出现突兀反白。
+- 修复检查更新逻辑：当本地当前版本高于远端旧版本时，不再把远端旧版本显示为最新。
+- README 补回完整项目说明、功能清单、截图展示、部署方式和原创作者致谢。
+
+## 详细功能
+
+### 画布创作
+
+Vozeb 的核心工作流围绕无限画布展开。你可以在画布里放置图片、文本、音频、视频和配置节点，通过连线组织上下游关系，用节点工具条进行复制、下载、保存素材、编辑、切图、放大、蒙版局部修改等操作。画布支持多项目管理、导入导出、撤销重做、小地图和快捷键。
+
+### AI 生成
+
+项目支持 OpenAI 兼容接口，浏览器前台可直接请求用户配置的 `Base URL` 和 `API Key`。支持文本问答、文生图、图生图、参考图编辑、音频生成和视频生成。视频生成支持 Seedance 2.0 场景，可通过火山方舟 Agent Plan 接入。
+
+### 提示词与素材
+
+公共提示词由管理员后台维护，会出现在用户端提示词库。用户也可以维护自己的提示词，把稳定的提示词、参考风格和生成结果沉淀为素材。素材库支持本地保存、导入导出和可选 WebDAV 同步，适合长期积累个人创作资产。
+
+### 用户与管理员
+
+Vozeb 增加了账号系统和后台管理能力。管理员可以控制注册是否开放，调整用户角色、账号状态、每日额度、签到奖励、系统接口渠道和默认模型。后台采用侧边栏切换布局，概览、系统设置、用户管理和公共提示词库分区更清楚。
+
+### Agent 与插件
+
+本地 Canvas Agent 可以连接 Codex / Claude Code，让 Agent 通过 MCP 读取和操作当前画布。仓库同时提供 Codex App 插件，安装后会注册同一个 `infinite-canvas` MCP，并尝试拉起本地 Agent。当前仍保留原 MCP 名称和部分内部存储 key，以避免破坏已有用户数据和插件兼容性。
+
+## 效果展示
+
+<table width="100%">
+  <tr>
+    <td width="50%"><img src="https://i.ibb.co/TDFvGWDT/image.png" alt="Vozeb 画布编排" border="0"></td>
+    <td width="50%"><img src="https://i.ibb.co/zVwJq3YS/image.png" alt="Vozeb 图片生成" border="0"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://i.ibb.co/PvY3qhhK/image.png" alt="Vozeb 参考图编辑" border="0"></td>
+    <td width="50%"><img src="https://i.ibb.co/7D04LwN/image.png" alt="Vozeb 节点工作流" border="0"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://i.ibb.co/bj30FtS5/5.png" alt="Vozeb 多图展示" border="0"></td>
+    <td width="50%"><img src="https://i.ibb.co/hxRvjw51/image.png" alt="Vozeb 创作结果" border="0"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="https://i.ibb.co/jkWsF8q1/image.png" alt="Vozeb 素材沉淀" border="0"></td>
+    <td width="50%"><img src="https://i.ibb.co/XrnfXHx7/image.png" alt="Vozeb 画布效果" border="0"></td>
+  </tr>
+</table>
 
 ## 技术栈
 
@@ -50,14 +105,24 @@ pnpm run dev
 
 运行后默认端口为 `3000`，可访问 `http://localhost:3000`。
 
-Docker 运行：
+首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
+
+## Docker 运行
 
 ```bash
 docker build -t vozeb .
 docker run --rm -p 3000:3000 vozeb
 ```
 
-首次打开后进入右上角配置，填入自己的 OpenAI 兼容 `Base URL` 和 `API Key`。
+## New API 自动配置
+
+如果使用 New API，可在 `系统设置 -> 聊天方式 -> 添加聊天设置` 中填入：
+
+```text
+https://canvas.best?apiKey={key}&baseUrl={address}
+```
+
+跳转后会自动打开配置弹窗并填入 API Key 和 Base URL。如果自己部署了，可以把 `https://canvas.best` 替换成你的部署地址。
 
 ## 文档
 
@@ -68,12 +133,14 @@ docker run --rm -p 3000:3000 vozeb
 - [画布快捷键](docs/content/docs/canvas/canvas-shortcuts.mdx)
 - [本地 Canvas Agent](canvas-agent/README.md)
 - [Codex app 插件](plugins/infinite-canvas)
+- [待办事项](docs/content/docs/progress/todo.mdx)
+- [待测试](docs/content/docs/progress/pending-test.mdx)
 
 ## 致谢
 
 Vozeb 基于原开源项目 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 继续开发。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
 
-也感谢相关开源社区、提示词仓库和工具链项目提供的灵感与基础设施。
+也感谢 LinuxDO 社区、相关提示词开源仓库、Codex / Claude Code 生态和所有工具链项目提供的灵感与基础设施。
 
 ## 开源协议
 
