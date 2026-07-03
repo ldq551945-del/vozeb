@@ -42,7 +42,17 @@ http://localhost:3000
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-0.5G 到 2G 内存的小服务器建议优先使用发布镜像；服务器只拉取并启动容器，不现场执行 `next build`。如果必须本地构建，请至少准备 2G 内存、启用 BuildKit 缓存，并保留 `NEXT_BUILD_CPUS=1`，这样可以降低 Next.js 构建时的 worker 数和资源峰值。
+0.5G 到 2G 内存的小服务器建议优先使用发布镜像；服务器只拉取并启动容器，不现场执行 `next build`。如果必须在 0.5G 服务器上尝试本地构建，请先开启 1G 到 2G swap，并使用低内存构建配置：
+
+```bash
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+docker compose -f docker-compose.lowmem.yml up -d --build
+```
+
+低内存构建会把 Node 构建内存上限压到 384MB，并保留 `NEXT_BUILD_CPUS=1`，能降低 OOM 概率，但会明显变慢。如果仍然失败，请改用发布镜像，或在本机/CI 构建后推送镜像。
 
 ## 为什么低配服务器构建会拉满 CPU
 

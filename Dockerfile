@@ -3,10 +3,12 @@
 FROM oven/bun:1.3.13 AS web-build
 
 WORKDIR /app/web
+ARG BUILD_NODE_OPTIONS=--max-old-space-size=1536
+ARG NEXT_BUILD_CPUS=1
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV CI=1
-ENV NODE_OPTIONS=--max-old-space-size=1536
-ENV NEXT_BUILD_CPUS=1
+ENV NODE_OPTIONS=${BUILD_NODE_OPTIONS}
+ENV NEXT_BUILD_CPUS=${NEXT_BUILD_CPUS}
 
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile --cache-dir=/root/.bun/install/cache

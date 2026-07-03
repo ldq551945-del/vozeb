@@ -1,0 +1,17 @@
+services:
+  app:
+    image: vozeb:lowmem
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_NODE_OPTIONS: --max-old-space-size=384
+        NEXT_BUILD_CPUS: "1"
+    ports:
+      - "3000:3000"
+    volumes:
+      - vozeb-data:/app/web/.data
+    restart: unless-stopped
+
+volumes:
+  vozeb-data:
