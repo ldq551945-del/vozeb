@@ -56,7 +56,7 @@ export function AppTopNav() {
                             </button>
                         </div>
 
-                        <nav className="app-shell-nav-pill hide-scrollbar hidden min-w-0 items-center gap-1 overflow-x-auto lg:flex">
+                        <nav className="app-shell-nav-pill hide-scrollbar hidden min-w-0 items-center gap-1 overflow-x-auto overflow-y-visible lg:flex">
                             {navigationTools.map((tool) => {
                                 const Icon = tool.icon;
                                 const active = tool.slug === activeToolSlug;
