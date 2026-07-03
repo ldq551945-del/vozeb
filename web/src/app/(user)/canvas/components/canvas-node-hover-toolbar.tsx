@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { App, Modal, Segmented, Tooltip } from "antd";
 import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Pencil, Plus, RefreshCw, Settings2, Trash2, Upload, Video } from "lucide-react";
 
@@ -80,6 +80,8 @@ export function CanvasNodeHoverToolbar({
     const [draftImageToolIds, setDraftImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
     const [draftShowImageToolLabels, setDraftShowImageToolLabels] = useState(true);
     const [imageToolSettingsOpen, setImageToolSettingsOpen] = useState(false);
+    const toolbarRef = useRef<HTMLDivElement>(null);
+    const [toolbarMetrics, setToolbarMetrics] = useState({ width: 0, viewportWidth: 0 });
     const { message } = App.useApp();
     const copyText = useCopyText();
 
@@ -100,10 +102,27 @@ export function CanvasNodeHoverToolbar({
         setImageToolSettingsOpen(false);
     }, [node?.id]);
 
+    useEffect(() => {
+        const toolbar = toolbarRef.current;
+        if (!toolbar || typeof window === "undefined") return;
+        const sync = () => setToolbarMetrics({ width: toolbar.offsetWidth, viewportWidth: window.innerWidth });
+        sync();
+        const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(sync) : null;
+        resizeObserver?.observe(toolbar);
+        window.addEventListener("resize", sync);
+        return () => {
+            resizeObserver?.disconnect();
+            window.removeEventListener("resize", sync);
+        };
+    }, [node?.id, quickImageToolIds, showImageToolLabels, imageToolSettingsOpen]);
+
     if (!node) return null;
 
     const left = viewport.x + (node.position.x + node.width / 2) * viewport.k;
     const top = viewport.y + node.position.y * viewport.k - 14;
+    const safeViewportWidth = toolbarMetrics.viewportWidth || 0;
+    const safeToolbarWidth = Math.min(toolbarMetrics.width || 0, Math.max(0, safeViewportWidth - 32));
+    const toolbarLeft = safeViewportWidth && safeToolbarWidth ? Math.min(Math.max(left, safeToolbarWidth / 2 + 16), safeViewportWidth - safeToolbarWidth / 2 - 16) : left;
     const isImage = node.type === CanvasNodeType.Image;
     const isVideo = node.type === CanvasNodeType.Video;
     const isAudio = node.type === CanvasNodeType.Audio;
@@ -179,8 +198,9 @@ export function CanvasNodeHoverToolbar({
     return (
         <>
             <div
-                className="absolute z-[70] flex h-12 -translate-x-1/2 -translate-y-full items-center overflow-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
-                style={{ left, top }}
+                ref={toolbarRef}
+                className="thin-scrollbar absolute z-[70] flex h-12 max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-full items-center overflow-x-auto overflow-y-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
+                style={{ left: toolbarLeft, top }}
                 onMouseEnter={() => onKeep(node.id)}
                 onMouseLeave={() => {
                     if (!imageToolSettingsOpen) onLeave();
