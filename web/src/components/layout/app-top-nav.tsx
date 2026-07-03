@@ -67,10 +67,7 @@ export function AppTopNav() {
                                         prefetch
                                         onMouseEnter={() => router.prefetch(`/${tool.slug}`)}
                                         onFocus={() => router.prefetch(`/${tool.slug}`)}
-                                        className={cn(
-                                            "flex h-10 shrink-0 items-center gap-2 rounded-md px-3.5 text-sm font-medium leading-none transition",
-                                            active ? "bg-stone-950 text-white shadow-sm dark:bg-white dark:text-stone-950" : "text-stone-600 hover:bg-stone-950/6 hover:text-stone-950 dark:text-stone-300 dark:hover:bg-white/10 dark:hover:text-white",
-                                        )}
+                                        className={cn("app-shell-nav-link flex h-10 shrink-0 items-center gap-2 rounded-md px-3.5 text-sm font-medium leading-none", active && "is-active")}
                                     >
                                         <Icon className="size-[17px]" />
                                         <span className="truncate">{tool.label}</span>

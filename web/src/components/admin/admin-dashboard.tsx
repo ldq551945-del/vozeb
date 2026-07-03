@@ -61,6 +61,9 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
     const [promptsLoading, setPromptsLoading] = useState(false);
     const [promptsLoaded, setPromptsLoaded] = useState(false);
     const [deletingPromptId, setDeletingPromptId] = useState("");
+    const [userSearch, setUserSearch] = useState("");
+    const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+    const [bulkDeletingUsers, setBulkDeletingUsers] = useState(false);
     const [editingUser, setEditingUser] = useState<PublicUser | null>(null);
     const [activeSection, setActiveSection] = useState<AdminSectionKey>("overview");
     const stats = useMemo(
@@ -80,6 +83,12 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         }),
         [settings.systemChannels],
     );
+    const filteredUsers = useMemo(() => {
+        const keyword = userSearch.trim().toLowerCase();
+        if (!keyword) return users;
+        return users.filter((user) => [user.displayName, user.username, user.email || "", user.role === "admin" ? "管理员" : "普通用户", user.status === "active" ? "可用" : "禁用"].some((value) => value.toLowerCase().includes(keyword)));
+    }, [userSearch, users]);
+    const selectedUsers = useMemo(() => users.filter((user) => selectedUserIds.includes(user.id)), [selectedUserIds, users]);
 
     useEffect(() => {
         if (activeSection === "prompts" && !promptsLoaded && !promptsLoading) void loadPrompts();
@@ -158,11 +167,48 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             const payload = (await response.json()) as { error?: string };
             if (!response.ok) throw new Error(payload.error || "删除用户失败");
             setUsers((items) => items.filter((item) => item.id !== userId));
+            setSelectedUserIds((items) => items.filter((id) => id !== userId));
             message.success("用户已删除");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "删除用户失败");
         } finally {
             setUpdatingUserId(null);
+        }
+    };
+
+    const bulkDeleteUsers = async () => {
+        const deletable = selectedUsers.filter((user) => user.id !== currentUser.id);
+        if (!deletable.length) {
+            message.warning("请选择可删除的用户");
+            return;
+        }
+
+        setBulkDeletingUsers(true);
+        const deletedIds: string[] = [];
+        const failedMessages: string[] = [];
+        try {
+            for (const user of deletable) {
+                const response = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+                const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+                if (response.ok) {
+                    deletedIds.push(user.id);
+                } else {
+                    failedMessages.push(`${user.displayName || user.username}：${payload?.error || "删除失败"}`);
+                }
+            }
+            if (deletedIds.length) {
+                setUsers((items) => items.filter((item) => !deletedIds.includes(item.id)));
+                setSelectedUserIds((items) => items.filter((id) => !deletedIds.includes(id)));
+            }
+            if (failedMessages.length) {
+                message.warning(`已删除 ${deletedIds.length} 个，${failedMessages.length} 个失败：${failedMessages.join("；")}`);
+            } else {
+                message.success(`已删除 ${deletedIds.length} 个用户`);
+            }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "批量删除失败");
+        } finally {
+            setBulkDeletingUsers(false);
         }
     };
 
@@ -756,7 +802,35 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                 </Button>
                             }
                         />
-                        <Table rowKey="id" columns={userColumns} dataSource={users} pagination={{ pageSize: 10, hideOnSinglePage: true }} scroll={{ x: 1040 }} size="middle" />
+                        <div className="flex flex-col gap-3 border-b border-stone-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 dark:border-stone-800">
+                            <Input allowClear className="max-w-xl" prefix={<Search className="size-4 text-stone-400" />} placeholder="搜索昵称、用户名、邮箱、角色或状态" value={userSearch} onChange={(event) => setUserSearch(event.target.value)} />
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm text-stone-500 dark:text-stone-400">
+                                    已选 {selectedUserIds.length} / 显示 {filteredUsers.length}
+                                </span>
+                                <Popconfirm title="批量删除选中用户？" description="会逐个清理用户会话、签到和额度记录；当前账号和最后一个管理员会被系统阻止删除。" okText="删除" cancelText="取消" onConfirm={() => void bulkDeleteUsers()}>
+                                    <Button danger icon={<Trash2 className="size-4" />} disabled={!selectedUserIds.length} loading={bulkDeletingUsers}>
+                                        批量删除
+                                    </Button>
+                                </Popconfirm>
+                            </div>
+                        </div>
+                        <Table
+                            rowKey="id"
+                            columns={userColumns}
+                            dataSource={filteredUsers}
+                            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                            rowSelection={{
+                                selectedRowKeys: selectedUserIds,
+                                onChange: (keys) => setSelectedUserIds(keys.map(String)),
+                                getCheckboxProps: (record) => ({
+                                    disabled: record.id === currentUser.id,
+                                    title: record.id === currentUser.id ? "不能选择当前登录账号" : undefined,
+                                }),
+                            }}
+                            scroll={{ x: 1040 }}
+                            size="middle"
+                        />
                     </Panel>
                 ) : null}
 
