@@ -10,7 +10,7 @@ The primary users are the project owner and a controlled set of registered users
 
 ## Product Purpose
 
-Infinite Canvas is being adapted from a local-first AI canvas into a multi-user creative workbench with login, registration, role-based access, and an administrator area. Success means preserving the existing canvas, model, prompt, asset, and agent workflows while adding clear user ownership, administrative control, and a foundation for later server-side project storage.
+VOZEB is being adapted from a local-first AI canvas into a multi-user creative workbench with login, registration, role-based access, and an administrator area. Success means preserving the existing canvas, model, prompt, asset, and agent workflows while adding clear user ownership, administrative control, and a foundation for later server-side project storage.
 
 ## Brand Personality
 

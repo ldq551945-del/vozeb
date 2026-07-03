@@ -27,6 +27,27 @@ export function AppProviders({ children }: { children: ReactNode }) {
     const dark = theme === "dark";
 
     useEffect(() => {
+        const reloadOnceForChunkError = (reason: unknown) => {
+            const text = reason instanceof Error ? `${reason.name} ${reason.message}` : String(reason);
+            if (!/ChunkLoadError|Loading chunk|dynamically imported module|failed to fetch/i.test(text)) return;
+            const key = "vozeb:chunk-reload-attempted";
+            const lastAttempt = Number(sessionStorage.getItem(key) || "0");
+            if (Date.now() - lastAttempt < 30_000) return;
+            sessionStorage.setItem(key, String(Date.now()));
+            window.location.reload();
+        };
+
+        const handleError = (event: ErrorEvent) => reloadOnceForChunkError(event.error || event.message);
+        const handleRejection = (event: PromiseRejectionEvent) => reloadOnceForChunkError(event.reason);
+        window.addEventListener("error", handleError);
+        window.addEventListener("unhandledrejection", handleRejection);
+        return () => {
+            window.removeEventListener("error", handleError);
+            window.removeEventListener("unhandledrejection", handleRejection);
+        };
+    }, []);
+
+    useEffect(() => {
         document.documentElement.classList.toggle("dark", dark);
         document.documentElement.style.colorScheme = theme;
     }, [dark, theme]);
