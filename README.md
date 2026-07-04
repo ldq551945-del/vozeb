@@ -216,19 +216,16 @@ docker compose pull
 docker compose up -d
 ```
 
-0.5G 服务器不建议现场构建源码。Next.js 生产构建需要安装依赖、编译页面、收集页面数据并输出 standalone，内存太小时很容易被系统杀掉。当前 `docker-compose.yml` 默认使用发布镜像，不会在服务器执行 `next build`；源码构建也默认 `NEXT_BUILD_CPUS=1` 单 worker。需要自定义源码时，建议在本机或 GitHub Actions 构建并推送镜像，再让服务器执行 `docker compose pull && docker compose up -d`。
+0.5G 服务器不要现场构建源码。Next.js 生产构建需要安装依赖、编译页面、收集页面数据并输出 standalone，内存太小时很容易被系统杀掉。当前 `docker-compose.yml` 默认使用发布镜像，不会在服务器执行 `next build`。需要自定义源码时，建议在本机或 GitHub Actions 构建并推送镜像，再让服务器执行 `docker compose pull && docker compose up -d`。
 
-如果你必须在 0.5G 服务器上尝试现场构建，请先准备至少 1G 到 2G swap，然后使用低内存构建配置。这个模式会把 Node 构建内存上限压到 384MB，并保持 Next.js 单 worker，能降低被 OOM kill 的概率，但构建会明显变慢：
+如果服务器内存只有 0.5G，可以使用低内存 Compose 文件。它同样只拉取 `ghcr.io/csyqlz/vozeb:latest` 发布镜像，并给运行中的容器加上 512MB 内存限制：
 
 ```bash
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-docker compose -f docker-compose.lowmem.yml up -d --build
+docker compose -f docker-compose.lowmem.yml pull
+docker compose -f docker-compose.lowmem.yml up -d
 ```
 
-如果低内存构建仍然失败，说明机器内存和磁盘 IO 已经不适合现场构建，请改用发布镜像或在本机/CI 构建后推送镜像。
+低内存机器如仍然运行不稳，再考虑增加 swap；但不要在 0.5G 服务器上执行 `docker compose up -d --build`。
 
 如果你的机器至少有 2G 内存，并且必须基于当前源码本地构建，再使用下面的命令：
 

@@ -65,17 +65,14 @@ Token 需要具备读取 Packages 的权限。不要把 Token 写进仓库或公
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
-0.5G 到 2G 内存的小服务器建议优先使用发布镜像；服务器只拉取并启动容器，不现场执行 `next build`。如果必须在 0.5G 服务器上尝试本地构建，请先开启 1G 到 2G swap，并使用低内存构建配置：
+0.5G 到 2G 内存的小服务器建议优先使用发布镜像；服务器只拉取并启动容器，不现场执行 `next build`。如果服务器只有 0.5G 内存，可以使用低内存 Compose 文件，它同样只拉取 `ghcr.io/csyqlz/vozeb:latest`，并给运行中的容器加上 512MB 内存限制：
 
 ```bash
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-docker compose -f docker-compose.lowmem.yml up -d --build
+docker compose -f docker-compose.lowmem.yml pull
+docker compose -f docker-compose.lowmem.yml up -d
 ```
 
-低内存构建会把 Node 构建内存上限压到 384MB，并保留 `NEXT_BUILD_CPUS=1`，能降低 OOM 概率，但会明显变慢。如果仍然失败，请改用发布镜像，或在本机 / CI 构建后推送镜像仓库，再让服务器拉取。
+0.5G 服务器不要执行 `docker compose up -d --build`。需要自定义源码时，请在本机或 CI 构建后推送镜像仓库，再让服务器拉取。
 
 ## 为什么低配服务器构建会拉满 CPU
 
@@ -86,7 +83,7 @@ docker compose -f docker-compose.lowmem.yml up -d --build
 建议顺序：
 
 1. 0.5G 服务器使用 `ghcr.io/csyqlz/vozeb:latest` 发布镜像，服务器只拉取和启动，适合 2 分钟级部署。
-2. 必须本地构建时保留 `NEXT_BUILD_CPUS=1`，并开启 BuildKit 缓存；建议至少 2G 内存。
+2. 必须本地构建时保留 `NEXT_BUILD_CPUS=1`，并开启 BuildKit 缓存；建议至少 2G 内存，不建议 0.5G 机器现场构建。
 3. 如果仍然卡死，在本机或 CI 构建镜像后推送到镜像仓库，再让服务器拉取。
 
 ## 更新镜像
@@ -122,7 +119,7 @@ docker compose -f docker-compose.local.yml up -d --build
 
 当前主应用镜像只启动 Next.js。画布、我的素材、生成记录和 AI API Key 默认保存在浏览器本地。
 
-账号、后台网站设置、用户额度、签到记录和公共提示词库会写入服务端 `.data` 目录：
+账号、后台网站设置、用户积分、签到记录和公共提示词库会写入服务端 `.data` 目录：
 
 - 用户与后台设置：`/app/web/.data/auth.json`
 - 管理员公共提示词：`/app/web/.data/prompts.json`

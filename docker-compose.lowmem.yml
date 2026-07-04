@@ -1,16 +1,12 @@
 services:
   app:
-    image: vozeb:lowmem
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        BUILD_NODE_OPTIONS: --max-old-space-size=384
-        NEXT_BUILD_CPUS: "1"
+    image: ghcr.io/csyqlz/vozeb:latest
     ports:
       - "3000:3000"
     volumes:
       - vozeb-data:/app/web/.data
+    mem_limit: 512m
+    memswap_limit: 768m
     restart: unless-stopped
 
 volumes:
