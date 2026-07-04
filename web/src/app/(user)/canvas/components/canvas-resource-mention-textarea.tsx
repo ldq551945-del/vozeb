@@ -33,6 +33,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
     const [mention, setMention] = useState<MentionState | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
     const [hasSelection, setHasSelection] = useState(false);
+    const [focused, setFocused] = useState(false);
     const candidates = useMemo(() => {
         if (!mention) return [];
         const query = mention.query.trim().toLowerCase();
@@ -88,7 +89,8 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
         setHasSelection(Boolean(textarea && textarea.selectionStart !== textarea.selectionEnd));
     };
 
-    const showOverlay = Boolean(value && activeLabels.length && !hasSelection);
+    const hasActiveLabelInValue = activeLabels.some((label) => value.includes(label));
+    const showOverlay = Boolean(value && hasActiveLabelInValue && !hasSelection && !focused);
     const mergedStyle = {
         ...(style || {}),
         color: showOverlay ? "transparent" : style?.color,
@@ -126,6 +128,11 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                 onSelect={(event) => {
                     updateSelectionState();
                     props.onSelect?.(event);
+                }}
+                onFocus={(event) => {
+                    setFocused(true);
+                    updateSelectionState();
+                    props.onFocus?.(event);
                 }}
                 onKeyUp={(event) => {
                     updateSelectionState();
@@ -170,6 +177,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
                     props.onScroll?.(event);
                 }}
                 onBlur={(event) => {
+                    setFocused(false);
                     setHasSelection(false);
                     window.setTimeout(closeMention, 120);
                     props.onBlur?.(event);
