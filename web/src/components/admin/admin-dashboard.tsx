@@ -1302,7 +1302,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                     <Panel>
                         <PanelHeader title="生成日志" description="查看所有用户通过画布、图片工作台和视频创作台产生的图片/视频生成记录。" />
                         <div className="space-y-4 p-4 sm:p-5">
-                            <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_330px] xl:items-start">
+                            <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_286px] xl:items-start">
                                 <div className="grid min-w-0 grid-cols-2 gap-2.5 sm:grid-cols-[minmax(220px,300px)_118px_138px_118px_minmax(132px,180px)]">
                                     <Input
                                         allowClear
@@ -1374,7 +1374,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                     />
                                 </div>
                                 <DatePicker.RangePicker
-                                    className="w-full min-w-0 max-w-full"
+                                    className="admin-log-date-range w-full min-w-0 max-w-full"
                                     allowClear
                                     format="YYYY-MM-DD"
                                     placeholder={["开始日期", "结束日期"]}

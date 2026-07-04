@@ -7,9 +7,10 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { BookOpen, Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
-import { createImageGenerationTask, requestImageQuestion, waitForImageGenerationTask, type ImageGenerationTask } from "@/services/api/image";
+import { createImageGenerationTask, waitForImageGenerationTask, type ImageGenerationTask } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { recordGenerationLog } from "@/services/api/generation-logs";
+import { createTextGenerationTask, waitForTextGenerationTask, type TextGenerationTask } from "@/services/api/text";
 import { createVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
 import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -353,6 +354,7 @@ function VozebCanvasPage() {
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
     const resumingImageTaskIdsRef = useRef(new Set<string>());
     const resumingVideoTaskIdsRef = useRef(new Set<string>());
+    const resumingTextTaskIdsRef = useRef(new Set<string>());
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -399,7 +401,7 @@ function VozebCanvasPage() {
         setNodes((prev) =>
             prev.map((node) =>
                 affectedNodeIds.has(node.id) && node.metadata?.status === NODE_STATUS_LOADING
-                    ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined, videoTask: undefined, imageTask: undefined } }
+                    ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined, videoTask: undefined, imageTask: undefined, textTask: undefined } }
                     : node,
             ),
         );
@@ -530,6 +532,29 @@ function VozebCanvasPage() {
         [completeImageTask],
     );
 
+    const completeTextTask = useCallback(async (nodeId: string, generationConfig: AiConfig, task: TextGenerationTask, controller: AbortController, prompt?: string) => {
+        const answer = await waitForTextGenerationTask(generationConfig, task, { signal: controller.signal });
+        setNodes((prev) =>
+            prev.map((node) =>
+                node.id === nodeId
+                    ? {
+                          ...node,
+                          type: CanvasNodeType.Text,
+                          metadata: {
+                              ...node.metadata,
+                              content: answer || "没有返回内容",
+                              prompt: prompt || node.metadata?.prompt,
+                              status: NODE_STATUS_SUCCESS,
+                              textTask: undefined,
+                              errorDetails: undefined,
+                          },
+                      }
+                    : node,
+            ),
+        );
+        return answer || "没有返回内容";
+    }, []);
+
     useEffect(() => {
         if (!hydrated) return;
         setProjectLoaded(false);
@@ -621,9 +646,34 @@ function VozebCanvasPage() {
                     resumingVideoTaskIdsRef.current.delete(node.id);
                     finishGenerationRequest(node.id, controller);
                     setRunningNodeId((current) => (current === node.id ? null : current));
-                });
+            });
         });
     }, [completeVideoTask, effectiveConfig, finishGenerationRequest, message, nodes, projectLoaded, startGenerationRequest]);
+
+    useEffect(() => {
+        if (!projectLoaded) return;
+        const resumable = nodes.filter((node) => node.type === CanvasNodeType.Text && node.metadata?.status === NODE_STATUS_LOADING && node.metadata.textTask);
+        resumable.forEach((node) => {
+            const task = node.metadata?.textTask;
+            if (!task || resumingTextTaskIdsRef.current.has(node.id)) return;
+            resumingTextTaskIdsRef.current.add(node.id);
+            const controller = startGenerationRequest(node.id, node.id, node.id);
+            const generationConfig = buildGenerationConfig(effectiveConfig, node, "text");
+            setRunningNodeId((current) => current || node.id);
+            void completeTextTask(node.id, generationConfig, task, controller, node.metadata?.prompt)
+                .catch((error) => {
+                    if (isGenerationCanceled(error)) return;
+                    const errorDetails = error instanceof Error ? error.message : "文本生成失败";
+                    message.error(errorDetails);
+                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, textTask: undefined } } : item)));
+                })
+                .finally(() => {
+                    resumingTextTaskIdsRef.current.delete(node.id);
+                    finishGenerationRequest(node.id, controller);
+                    setRunningNodeId((current) => (current === node.id ? null : current));
+                });
+        });
+    }, [completeTextTask, effectiveConfig, finishGenerationRequest, message, nodes, projectLoaded, startGenerationRequest]);
 
     useEffect(() => {
         if (!projectLoaded || applyingHistoryRef.current || historyPausedRef.current) return;
@@ -2462,21 +2512,26 @@ function VozebCanvasPage() {
                 const textTargetIds = childIds.length ? childIds : [nodeId];
                 textTargetIds.forEach((targetNodeId) => startGenerationRequest(targetNodeId, nodeId, nodeId, controller));
                 const answers = await Promise.all(
-                    textTargetIds.map((targetNodeId) => {
-                        let localStreamed = "";
-                        return requestImageQuestion(
-                            generationConfig,
-                            buildNodeResponseMessages({ ...generationContext, prompt: effectivePrompt }),
-                            (text) => {
-                                localStreamed = text;
-                                streamed = text;
-                                if (isConfigNode) return;
-                                setNodes((prev) => prev.map((node) => (node.id === targetNodeId ? { ...node, type: CanvasNodeType.Text, metadata: { ...node.metadata, content: text, status: NODE_STATUS_LOADING } } : node)));
-                            },
-                            { signal: controller.signal },
-                        )
-                            .then((answer) => ({ nodeId: targetNodeId, content: answer || localStreamed }))
-                            .finally(() => finishGenerationRequest(targetNodeId, controller));
+                    textTargetIds.map(async (targetNodeId) => {
+                        try {
+                            const task = await createTextGenerationTask(generationConfig, buildNodeResponseMessages({ ...generationContext, prompt: effectivePrompt }), { signal: controller.signal });
+                            setNodes((prev) =>
+                                prev.map((node) =>
+                                    node.id === targetNodeId
+                                        ? {
+                                              ...node,
+                                              type: CanvasNodeType.Text,
+                                              metadata: { ...node.metadata, prompt: effectivePrompt, status: NODE_STATUS_LOADING, textTask: { id: task.id, model: task.model }, errorDetails: undefined },
+                                          }
+                                        : node,
+                                ),
+                            );
+                            const answer = await completeTextTask(targetNodeId, generationConfig, task, controller, effectivePrompt);
+                            streamed = answer;
+                            return { nodeId: targetNodeId, content: answer };
+                        } finally {
+                            finishGenerationRequest(targetNodeId, controller);
+                        }
                     }),
                 );
                 if (controller.signal.aborted) return;
@@ -2484,11 +2539,11 @@ function VozebCanvasPage() {
                 setNodes((prev) =>
                     prev.map((node) =>
                         childIds.includes(node.id)
-                            ? { ...node, metadata: { ...node.metadata, content: answerByNodeId.get(node.id) || streamed, status: NODE_STATUS_SUCCESS } }
+                            ? { ...node, metadata: { ...node.metadata, content: answerByNodeId.get(node.id) || streamed, status: NODE_STATUS_SUCCESS, textTask: undefined } }
                             : node.id === nodeId && isConfigNode
                               ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_SUCCESS } }
                               : node.id === nodeId && !editingTextNode
-                                ? { ...node, type: CanvasNodeType.Text, title: prompt.slice(0, 32) || "Generated Text", metadata: { ...node.metadata, content: answerByNodeId.get(node.id) || streamed, status: NODE_STATUS_SUCCESS } }
+                                ? { ...node, type: CanvasNodeType.Text, title: prompt.slice(0, 32) || "Generated Text", metadata: { ...node.metadata, content: answerByNodeId.get(node.id) || streamed, status: NODE_STATUS_SUCCESS, textTask: undefined } }
                                 : node,
                     ),
                 );
@@ -2497,14 +2552,20 @@ function VozebCanvasPage() {
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                 message.error(errorDetails);
                 setNodes((prev) =>
-                    prev.map((node) => (node.id === nodeId || pendingChildIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails } }) : node)),
+                    prev.map((node) =>
+                        node.id === nodeId || pendingChildIds.includes(node.id)
+                            ? node.id === nodeId && !markSourceStatus
+                                ? node
+                                : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails, textTask: undefined } }
+                            : node,
+                    ),
                 );
             } finally {
                 finishGenerationRequest(nodeId, runController);
                 setRunningNodeId(null);
             }
         },
-        [completeVideoTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startAndCompleteImageTask, startGenerationRequest],
+        [completeTextTask, completeVideoTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startAndCompleteImageTask, startGenerationRequest],
     );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
@@ -2531,7 +2592,9 @@ function VozebCanvasPage() {
                 return;
             }
 
-            const context = hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourceNode.metadata?.prompt || node.metadata?.prompt || ""));
+            const retryPromptSource =
+                sourceNode.type === CanvasNodeType.Config && sourceNode.metadata?.composerContent ? sourceNode.metadata.composerContent : sourceNode.metadata?.prompt || node.metadata?.prompt || "";
+            const context = hasSavedImageMetadata ? null : await hydrateNodeGenerationContext(buildNodeGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, retryPromptSource));
             const prompt = (savedImageMetadata?.prompt || context?.prompt || "").trim();
             if (!prompt) {
                 message.warning("找不到提示词，无法重试");
@@ -2555,17 +2618,15 @@ function VozebCanvasPage() {
             try {
                 if (node.type === CanvasNodeType.Text) {
                     if (!context) return;
-                    let streamed = "";
-                    const answer = await requestImageQuestion(
-                        generationConfig,
-                        buildNodeResponseMessages({ ...context, prompt }),
-                        (text) => {
-                            streamed = text;
-                            setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content: text, status: NODE_STATUS_LOADING } } : item)));
-                        },
-                        { signal: controller.signal },
+                    const task = await createTextGenerationTask(generationConfig, buildNodeResponseMessages({ ...context, prompt }), { signal: controller.signal });
+                    setNodes((prev) =>
+                        prev.map((item) =>
+                            item.id === node.id
+                                ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, prompt, status: NODE_STATUS_LOADING, textTask: { id: task.id, model: task.model }, errorDetails: undefined } }
+                                : item,
+                        ),
                     );
-                    setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, type: CanvasNodeType.Text, metadata: { ...item.metadata, content: answer || streamed, prompt, status: NODE_STATUS_SUCCESS } } : item)));
+                    await completeTextTask(node.id, generationConfig, task, controller, prompt);
                     return;
                 }
                 if (node.type === CanvasNodeType.Video) {
@@ -2589,13 +2650,13 @@ function VozebCanvasPage() {
                 if (isGenerationCanceled(error)) return;
                 const errorDetails = error instanceof Error ? error.message : "生成失败";
                 message.error(errorDetails);
-                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, imageTask: undefined } } : item)));
+                setNodes((prev) => prev.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails, imageTask: undefined, textTask: undefined } } : item)));
             } finally {
                 finishGenerationRequest(node.id, controller);
                 setRunningNodeId(null);
             }
         },
-        [effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startAndCompleteImageTask, startGenerationRequest],
+        [completeTextTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, openConfigDialog, startAndCompleteImageTask, startGenerationRequest],
     );
 
     const generateImageFromTextNode = useCallback(
@@ -3445,7 +3506,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
 
 function resetInterruptedGeneration(nodes: CanvasNodeData[]) {
     return nodes.map((node) =>
-        node.metadata?.status === "loading" && !node.metadata.videoTask && !node.metadata.imageTask
+        node.metadata?.status === "loading" && !node.metadata.videoTask && !node.metadata.imageTask && !node.metadata.textTask
             ? { ...node, metadata: { ...node.metadata, status: "error" as const, errorDetails: "页面刷新后生成已中断，请重新生成。" } }
             : node,
     );

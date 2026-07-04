@@ -2004,6 +2004,46 @@
         border-color: #f8fafc;
     }
 
+    .admin-log-date-range.ant-picker-range {
+        gap: 0;
+        justify-self: end;
+        width: min(100%, 286px) !important;
+    }
+
+    .admin-log-date-range.ant-picker-range .ant-picker-input {
+        flex: 0 0 94px;
+        min-width: 0;
+        width: 94px;
+    }
+
+    .admin-log-date-range.ant-picker-range .ant-picker-input > input {
+        flex: 0 0 94px;
+        min-width: 0;
+        width: 94px;
+    }
+
+    .admin-log-date-range.ant-picker-range .ant-picker-range-separator {
+        flex: 0 0 auto;
+        padding-inline: 2px;
+    }
+
+    .admin-log-date-range.ant-picker-range .ant-picker-suffix {
+        flex: 0 0 auto;
+        margin-inline-start: 6px;
+    }
+
+    @media (max-width: 520px) {
+        .admin-log-date-range.ant-picker-range .ant-picker-input {
+            flex-basis: 88px;
+            width: 88px;
+        }
+
+        .admin-log-date-range.ant-picker-range .ant-picker-input > input {
+            flex-basis: 88px;
+            width: 88px;
+        }
+    }
+
     @keyframes canvas-batch-child-in {
         from {
             opacity: 0;

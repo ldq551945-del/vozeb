@@ -66,6 +66,10 @@ export type CanvasNodeMetadata = {
         kind: CanvasImageGenerationType;
         model: string;
     };
+    textTask?: {
+        id: string;
+        model: string;
+    };
 };
 
 export type CanvasNodeData = {
