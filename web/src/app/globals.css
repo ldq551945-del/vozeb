@@ -2355,14 +2355,21 @@ html.dark .canvas-agent-confirm-switch.ant-switch.ant-switch-checked:hover:not(.
         width: 34px;
     }
 
+    .canvas-user-status-actions .canvas-points-action {
+        min-width: 54px;
+        padding-inline: 9px !important;
+        width: auto;
+    }
+
     .canvas-topbar-divider {
         display: none;
     }
 
     .canvas-agent-button.ant-btn {
-        width: 38px !important;
-        min-width: 38px !important;
+        height: 34px !important;
+        min-width: 34px !important;
         padding-inline: 0 !important;
+        width: 34px !important;
     }
 
     .canvas-agent-button.ant-btn > span:not(.ant-btn-icon) {
@@ -2440,10 +2447,16 @@ html.dark .canvas-agent-confirm-switch.ant-switch.ant-switch-checked:hover:not(.
         width: 32px;
     }
 
+    .canvas-user-status-actions .canvas-points-action {
+        min-width: 50px;
+        padding-inline: 8px !important;
+        width: auto;
+    }
+
     .canvas-agent-button.ant-btn {
-        height: 36px !important;
-        min-width: 36px !important;
-        width: 36px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        width: 32px !important;
     }
 }
 

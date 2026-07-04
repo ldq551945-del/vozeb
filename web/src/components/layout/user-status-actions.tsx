@@ -56,17 +56,27 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const showAdminMetaActions = user?.role === "admin";
     const defaultControlClass =
         "inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white/85 text-sm font-medium text-stone-700 shadow-sm shadow-stone-950/5 transition hover:border-stone-300 hover:bg-stone-50 hover:text-stone-950 dark:border-stone-800 dark:bg-stone-950/35 dark:text-stone-200 dark:shadow-black/15 dark:hover:border-stone-700 dark:hover:bg-stone-900 dark:hover:text-white";
-    const naturalIconClass =
+    const canvasControlClass =
+        "inline-flex h-9 shrink-0 items-center justify-center rounded-xl border px-2.5 text-sm font-medium shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/35 [&_svg]:size-4";
+    const canvasIconClass = cn(canvasControlClass, "w-9 px-0");
+    const canvasControlStyle: CSSProperties | undefined =
         variant === "canvas"
-            ? "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-stone-600 transition hover:bg-stone-100 hover:text-stone-950 sm:size-7 sm:hover:bg-transparent dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-white sm:dark:hover:bg-transparent [&_svg]:size-4"
-            : cn(defaultControlClass, "w-8 px-0 [&_svg]:size-4");
-    const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
+            ? {
+                  background: canvasTheme.toolbar.panel,
+                  borderColor: canvasTheme.toolbar.border,
+                  boxShadow: theme === "dark" ? "0 10px 30px rgba(0,0,0,.28)" : "0 10px 24px rgba(28,25,23,.08)",
+                  color: canvasTheme.toolbar.item,
+              }
+            : undefined;
+    const naturalIconClass = variant === "canvas" ? canvasIconClass : cn(defaultControlClass, "w-8 px-0 [&_svg]:size-4");
+    const iconStyle: CSSProperties | undefined = variant === "canvas" ? canvasControlStyle : undefined;
     const versionStyle = iconStyle;
-    const versionClassName = variant === "canvas" ? undefined : cn(defaultControlClass, "px-2.5 text-xs font-semibold");
-    const gitHubClassName = variant === "canvas" ? "size-7 bg-transparent text-base hover:bg-transparent dark:hover:bg-transparent" : cn(defaultControlClass, "w-8 px-0 text-base");
+    const versionClassName = variant === "canvas" ? cn(canvasControlClass, "px-2.5 text-xs font-semibold") : cn(defaultControlClass, "hidden px-2.5 text-xs font-semibold lg:inline-flex");
+    const gitHubClassName = variant === "canvas" ? cn(canvasIconClass, "text-base") : cn(defaultControlClass, "hidden w-8 px-0 text-base lg:inline-flex");
     const gitHubStyle = iconStyle;
     const showCheckIn = variant !== "canvas";
     const checkInLabel = checkingIn ? "签到中" : user?.checkedInToday ? "已签到" : "签到";
+    const compactCheckInLabel = checkingIn ? "中" : user?.checkedInToday ? "已签" : "签到";
     const accountItems: MenuProps["items"] = [
         {
             key: "profile",
@@ -150,7 +160,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     };
 
     return (
-        <div className={cn("inline-flex shrink-0 items-center gap-2", variant === "canvas" && "canvas-user-status-actions")}>
+        <div className={cn("inline-flex shrink-0 items-center gap-1.5 sm:gap-2", variant === "canvas" && "canvas-user-status-actions")}>
             {user ? (
                 <Popover
                     open={pointsOpen}
@@ -159,12 +169,12 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                         if (open) void loadPointRecords();
                     }}
                     trigger="click"
-                    placement="bottomRight"
+                    placement={variant === "canvas" ? "bottomRight" : "bottomLeft"}
                     content={<PointRecordPanel loading={pointsLoading} records={pointRecords} />}
                 >
                     <button
                         type="button"
-                        className={cn(defaultControlClass, "hidden gap-1.5 px-2.5 text-xs font-semibold sm:inline-flex")}
+                        className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "gap-1 px-2 text-xs font-semibold sm:gap-1.5 sm:px-2.5", variant === "canvas" && "canvas-points-action")}
                         style={iconStyle}
                         title="积分余额"
                     >
@@ -177,15 +187,17 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 <button
                     type="button"
                     className={cn(
-                        "inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white/85 px-3 text-sm font-semibold text-sky-700 shadow-sm shadow-stone-950/5 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800 disabled:cursor-default dark:border-stone-800 dark:bg-stone-950/35 dark:text-sky-200 dark:shadow-black/15 dark:hover:border-sky-400/25 dark:hover:bg-sky-400/10 dark:hover:text-sky-100",
-                        user.checkedInToday && "border-emerald-200 bg-emerald-50/80 text-emerald-700 shadow-none hover:border-emerald-200 hover:bg-emerald-50/80 hover:text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-200 dark:hover:border-emerald-400/20 dark:hover:bg-emerald-400/10 dark:hover:text-emerald-200",
+                        defaultControlClass,
+                        "px-2.5 text-sm font-semibold text-sky-700 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-200 dark:hover:border-sky-400/25 dark:hover:bg-sky-400/10 dark:hover:text-sky-100 sm:px-3",
+                        user.checkedInToday && "text-stone-600 hover:border-stone-200 hover:bg-white/85 hover:text-stone-600 dark:text-stone-300 dark:hover:border-stone-800 dark:hover:bg-stone-950/35 dark:hover:text-stone-300",
                     )}
                     disabled={user.checkedInToday || checkingIn}
                     onClick={handleCheckIn}
                     aria-label={user.checkedInToday ? "今日已签到" : "每日签到"}
                     title={user.checkedInToday ? "今日已签到" : "每日签到"}
                 >
-                    {checkInLabel}
+                    <span className="sm:hidden">{compactCheckInLabel}</span>
+                    <span className="hidden sm:inline">{checkInLabel}</span>
                 </button>
             ) : null}
             {showConfig ? (
@@ -193,7 +205,14 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Settings2 className="size-4" />
                 </button>
             ) : null}
-            <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={cn(naturalIconClass, variant === "canvas" && "canvas-theme-action")} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
+            <AnimatedThemeToggler
+                theme={theme}
+                onThemeChange={setTheme}
+                className={cn(naturalIconClass, variant === "canvas" && "canvas-theme-action")}
+                style={iconStyle}
+                aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+                title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+            />
             {showAdminMetaActions ? (
                 <span className={cn("canvas-admin-meta-actions inline-flex items-center", variant === "canvas" ? "gap-1" : "gap-2")}>
                     <VersionReleaseModal className={versionClassName} style={versionStyle} />
@@ -205,7 +224,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Dropdown menu={{ items: accountItems, onClick: handleMenuClick }} trigger={["click"]} placement="bottomRight">
                         <button
                             type="button"
-                            className={cn(defaultControlClass, "max-w-[36px] gap-2 px-2.5 sm:max-w-40", variant === "canvas" && "canvas-account-action")}
+                            className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "max-w-[36px] gap-2 px-2.5 sm:max-w-40", variant === "canvas" && "canvas-account-action")}
                             style={iconStyle}
                             aria-label="账户菜单"
                             title="账户菜单"
@@ -216,11 +235,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     </Dropdown>
                 </>
             ) : (
-                <Link
-                    href="/login"
-                    className={cn(defaultControlClass, "gap-2 px-2.5", variant === "canvas" && "canvas-account-action")}
-                    style={iconStyle}
-                >
+                <Link href="/login" className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "gap-2 px-2.5", variant === "canvas" && "canvas-account-action")} style={iconStyle}>
                     <UserCircle className="size-4" />
                     <span className="hidden sm:inline">登录</span>
                 </Link>
@@ -240,14 +255,14 @@ function formatQuotaReward(rewardPoints?: number) {
 
 function PointRecordPanel({ loading, records }: { loading: boolean; records: PointRecord[] }) {
     return (
-        <div className="w-72">
+        <div className="w-[min(18rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)]">
             <div className="mb-3 text-sm font-semibold text-stone-950 dark:text-stone-100">积分记录</div>
             {loading ? (
                 <div className="flex h-24 items-center justify-center">
                     <Spin size="small" />
                 </div>
             ) : records.length ? (
-                <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                <div className="max-h-[min(20rem,60dvh)] space-y-2 overflow-y-auto pr-1">
                     {records.map((record) => {
                         const positive = record.amount > 0;
                         return (

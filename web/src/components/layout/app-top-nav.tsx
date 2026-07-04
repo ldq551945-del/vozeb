@@ -45,11 +45,11 @@ export function AppTopNav() {
         <>
             {!hideHeader ? (
                 <header className="app-shell-header sticky top-0 z-20 h-[68px] shrink-0 sm:h-[74px]">
-                    <div className="mx-auto grid h-full max-w-[1500px] grid-cols-[1fr_auto] items-center gap-3 px-3 sm:px-6 lg:grid-cols-[minmax(180px,0.75fr)_auto_minmax(360px,1.25fr)] lg:gap-5">
-                        <div className="flex min-w-0 items-center justify-start">
-                            <Link href="/" className="flex h-full shrink-0 items-center gap-2.5 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
+                    <div className="mx-auto grid h-full max-w-[1500px] grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:grid-cols-[minmax(180px,0.75fr)_auto_minmax(360px,1.25fr)] lg:gap-5">
+                        <div className="flex min-w-0 items-center justify-start overflow-hidden">
+                            <Link href="/" className="flex h-full min-w-0 items-center gap-2.5 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                                 <SiteLogo logoUrl={site.logoUrl} className="size-9" />
-                                <span className="max-w-[34vw] truncate text-xl font-semibold sm:max-w-none">{site.title || "VOZEB"}</span>
+                                <span className="max-w-[24vw] truncate text-xl font-semibold sm:max-w-[30vw] lg:max-w-none">{site.title || "VOZEB"}</span>
                             </Link>
 
                             <button
@@ -83,7 +83,7 @@ export function AppTopNav() {
                             })}
                         </nav>
 
-                        <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-1 justify-self-end whitespace-nowrap sm:gap-2">
+                        <div className="my-auto flex h-9 max-w-[calc(100vw-9rem)] min-w-0 items-center justify-end overflow-x-auto overflow-y-visible whitespace-nowrap sm:max-w-[calc(100vw-12rem)] lg:max-w-none">
                             <UserStatusActions />
                         </div>
                     </div>
