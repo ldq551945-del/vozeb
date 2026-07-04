@@ -230,13 +230,17 @@ export const useConfigStore = create<ConfigStore>()(
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
                 const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
+                const webdav = { ...defaultWebdavSyncConfig, ...persistedWebdav };
+                if (webdav.directory === "infinite-canvas" && !webdav.url && !webdav.username && !webdav.password && !webdav.lastSyncedAt) {
+                    webdav.directory = defaultWebdavSyncConfig.directory;
+                }
                 const config = { ...defaultConfig, ...persistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
                 const channels = normalizeChannels(config);
                 const models = modelOptionsFromChannels(channels);
                 return {
                     ...current,
-                    webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
+                    webdav,
                     config: {
                         ...config,
                         apiSource: config.apiSource === "system" ? "system" : "custom",

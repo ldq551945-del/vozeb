@@ -331,7 +331,7 @@ export default function ImagePage() {
         const durationMs = Date.now() - pendingTask.startedAt;
         const nextImage: GeneratedImage = {
             id: resultId,
-            dataUrl: stored.url,
+            dataUrl: result.dataUrl,
             storageKey: stored.storageKey,
             slotIndex: index,
             durationMs,
@@ -396,16 +396,28 @@ export default function ImagePage() {
     };
 
     const downloadImage = (image: GeneratedImage, index: number) => {
+        if (!image.dataUrl) {
+            message.error("本地图片已丢失，无法下载");
+            return;
+        }
         saveAs(image.dataUrl, `image-${index + 1}.png`);
     };
 
     const addResultToReferences = async (image: GeneratedImage, index: number) => {
+        if (!image.dataUrl) {
+            message.error("本地图片已丢失，无法加入参考图");
+            return;
+        }
         const stored = await uploadImage(image.dataUrl);
         setReferences((value) => [...value, { id: nanoid(), name: `result-${index + 1}.png`, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }]);
         message.success("已加入参考图");
     };
 
     const saveResultToAssets = async (image: GeneratedImage, index: number) => {
+        if (!image.dataUrl) {
+            message.error("本地图片已丢失，无法加入素材");
+            return;
+        }
         const stored = await uploadImage(image.dataUrl);
         addAsset({
             kind: "image",
@@ -700,7 +712,7 @@ export default function ImagePage() {
                             </div>
                         </div>
                         {results.length ? (
-                            <div className={results.length === 1 ? "grid max-w-[360px] gap-4" : "grid justify-start gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),280px))]"}>
+                            <div className={results.length === 1 ? "grid max-w-[360px] gap-4" : "grid w-full grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3"}>
                                 {results.map((result, index) =>
                                     result.status === "success" && result.image ? (
                                         <ResultImageCard key={result.id} image={result.image} index={index} large={results.length === 1} selected={selectedResultIds.includes(result.id)} onSelectedChange={(checked) => toggleResultSelected(result.id, checked)} onEdit={addResultToReferences} onDownload={downloadImage} onSaveAsset={saveResultToAssets} />
@@ -792,11 +804,19 @@ function ResultImageCard({
     onDownload: (image: GeneratedImage, index: number) => void;
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
+    const hasImage = Boolean(image.dataUrl);
     return (
         <div className="relative overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
             <ResultSelectCheckbox selected={selected} onSelectedChange={onSelectedChange} />
             <div className={`${large ? "h-[240px]" : "h-[220px]"} flex w-full items-center justify-center bg-stone-50 dark:bg-stone-950`}>
-                <Image rootClassName="!h-full !w-full" src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="!h-full !w-full object-contain" style={{ objectFit: "contain" }} />
+                {hasImage ? (
+                    <Image rootClassName="!h-full !w-full" src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="!h-full !w-full object-contain" style={{ objectFit: "contain" }} />
+                ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-stone-500 dark:text-stone-400">
+                        <ImagePlus className="size-8 text-stone-400" />
+                        <span>本地图片已丢失</span>
+                    </div>
+                )}
             </div>
             <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
                 <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
@@ -808,17 +828,17 @@ function ResultImageCard({
                 </div>
                 <div className="grid min-w-0 grid-cols-3 gap-2">
                     <Tooltip title="添加到素材">
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
+                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" disabled={!hasImage} icon={<FolderPlus className="size-3.5" />} onClick={() => void onSaveAsset(image, index)}>
                             添加到素材
                         </Button>
                     </Tooltip>
                     <Tooltip title="加入参考图">
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
+                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" disabled={!hasImage} icon={<PenLine className="size-3.5" />} onClick={() => void onEdit(image, index)}>
                             加入参考图
                         </Button>
                     </Tooltip>
                     <Tooltip title="下载">
-                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
+                        <Button className={RESULT_ACTION_BUTTON_CLASS} size="small" disabled={!hasImage} icon={<Download className="size-3.5" />} onClick={() => onDownload(image, index)}>
                             下载
                         </Button>
                     </Tooltip>
@@ -1022,7 +1042,7 @@ function LogCard({ log, selected, active, onSelectedChange, onClick, onRename }:
                         ) : null}
                     </div>
                 </div>
-                <div className="ml-7 mt-1 rounded-md border border-stone-200/70 bg-white/65 px-2.5 py-2 shadow-sm shadow-stone-200/30 dark:border-stone-800 dark:bg-stone-950/45 dark:shadow-black/10">
+                <div className={`relative ml-6 mt-1 min-h-[74px] rounded-md border border-stone-200/70 bg-white/65 px-2.5 py-2 shadow-sm shadow-stone-200/30 dark:border-stone-800 dark:bg-stone-950/45 dark:shadow-black/10 ${log.pendingCount ? "pr-24" : ""}`}>
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="blue">
                             成功 {log.successCount ?? log.imageCount}
@@ -1032,17 +1052,17 @@ function LogCard({ log, selected, active, onSelectedChange, onClick, onRename }:
                                 失败 {log.failCount}
                             </Tag>
                         ) : null}
-                        {log.pendingCount ? (
-                            <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="processing">
-                                生成中 {log.pendingCount}
-                            </Tag>
-                        ) : null}
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none">{log.imageCount} 张</Tag>
                         <Tag className="m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="green">
                             {formatDuration(log.durationMs)}
                         </Tag>
                     </div>
                     <div className="mt-1.5 truncate text-xs leading-5 text-stone-500 dark:text-stone-400">{log.time}</div>
+                    {log.pendingCount ? (
+                        <Tag className="!absolute bottom-2 right-2 m-0 flex h-6 items-center rounded-md px-1.5 text-xs leading-none" color="processing">
+                            生成中 {log.pendingCount}
+                        </Tag>
+                    ) : null}
                 </div>
             </div>
         </div>
@@ -1079,7 +1099,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
     const images = await Promise.all(
         (log.images || []).map(async (item) => ({
             ...item,
-            dataUrl: await resolveImageUrl(item.storageKey, item.dataUrl),
+            dataUrl: await hydrateGeneratedImageUrl(item.storageKey, item.dataUrl),
         })),
     );
     const config = normalizeLogConfig(log);
@@ -1116,9 +1136,18 @@ function serializeLog(log: GenerationLog): GenerationLog {
     return {
         ...log,
         references: log.references.map((item) => ({ ...item, dataUrl: item.storageKey ? "" : item.dataUrl })),
-        images: log.images.map((image) => ({ ...image, dataUrl: image.storageKey ? "" : image.dataUrl })),
+        images: log.images.map((image) => ({ ...image, dataUrl: isStableImageUrl(image.dataUrl) ? image.dataUrl : "" })),
         thumbnails: [],
     };
+}
+
+async function hydrateGeneratedImageUrl(storageKey?: string, fallback = "") {
+    if (isStableImageUrl(fallback)) return fallback;
+    return resolveImageUrl(storageKey, fallback);
+}
+
+function isStableImageUrl(value?: string) {
+    return Boolean(value && (value.startsWith("data:") || /^https?:\/\//i.test(value)));
 }
 
 function resultsFromLog(log: GenerationLog): GenerationResult[] {

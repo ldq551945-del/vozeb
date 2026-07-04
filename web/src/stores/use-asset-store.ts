@@ -2,10 +2,11 @@
 
 import { create } from "zustand";
 import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
+import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
-import { appStorageKey } from "@/lib/storage-keys";
+import { APP_STORAGE_NAME, LEGACY_APP_STORAGE_NAME, appStorageKey } from "@/lib/storage-keys";
 import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
 
@@ -39,6 +40,10 @@ type AssetStore = {
 };
 
 const ASSET_STORE_KEY = appStorageKey("asset_store");
+const imageLogStore = localforage.createInstance({ name: APP_STORAGE_NAME, storeName: "image_generation_logs" });
+const videoLogStore = localforage.createInstance({ name: APP_STORAGE_NAME, storeName: "video_generation_logs" });
+const legacyImageLogStore = localforage.createInstance({ name: LEGACY_APP_STORAGE_NAME, storeName: "image_generation_logs" });
+const legacyVideoLogStore = localforage.createInstance({ name: LEGACY_APP_STORAGE_NAME, storeName: "video_generation_logs" });
 
 const assetStorage: PersistStorage<AssetStore> = {
     getItem: async (name) => {
@@ -91,8 +96,9 @@ export const useAssetStore = create<AssetStore>()(
             cleanupImages: (extra) => {
                 window.setTimeout(async () => {
                     const { useCanvasStore } = await import("@/app/(user)/canvas/stores/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
+                    const workbenchLogs = await readWorkbenchLogs();
+                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, workbenchLogs, extra });
+                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, workbenchLogs, extra });
                 }, 0);
             },
         }),
@@ -106,3 +112,13 @@ export const useAssetStore = create<AssetStore>()(
         },
     ),
 );
+
+async function readWorkbenchLogs() {
+    const values: unknown[] = [];
+    for (const store of [imageLogStore, videoLogStore, legacyImageLogStore, legacyVideoLogStore]) {
+        await store.iterate<unknown, void>((value) => {
+            values.push(value);
+        });
+    }
+    return values;
+}

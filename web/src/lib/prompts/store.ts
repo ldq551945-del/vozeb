@@ -85,6 +85,7 @@ export async function listPrompts(options: PromptListOptions) {
         tags: collectTags(withoutTagFilter),
         categories: collectCategories(base),
         total: filtered.length,
+        scopeTotal: base.length,
     };
 }
 

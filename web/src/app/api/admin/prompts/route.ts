@@ -1,17 +1,37 @@
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { isAuthInputError } from "@/lib/auth/store";
 import { readJsonBody } from "@/lib/auth/request";
-import { createPrompt, listAllLibraryPrompts, type PromptInput } from "@/lib/prompts/store";
+import { createPrompt, listPrompts, type PromptInput } from "@/lib/prompts/store";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     const currentUser = await getCurrentUser();
     if (!currentUser) return NextResponse.json({ error: "请先登录" }, { status: 401 });
     if (currentUser.role !== "admin") return NextResponse.json({ error: "需要管理员权限" }, { status: 403 });
-    return NextResponse.json({ prompts: await listAllLibraryPrompts() });
+    const params = request.nextUrl.searchParams;
+    const page = Math.max(1, Number(params.get("page")) || 1);
+    const pageSize = Math.max(1, Math.min(100, Number(params.get("pageSize")) || 20));
+    const result = await listPrompts({
+        scope: "library",
+        keyword: params.get("keyword") || "",
+        tags: params.getAll("tag").filter(Boolean),
+        category: params.get("category") || "",
+        page,
+        pageSize,
+    });
+    return NextResponse.json({
+        prompts: result.items,
+        total: result.total,
+        scopeTotal: result.scopeTotal,
+        page,
+        pageSize,
+        tags: result.tags,
+        categories: result.categories,
+    });
 }
 
 export async function POST(request: Request) {

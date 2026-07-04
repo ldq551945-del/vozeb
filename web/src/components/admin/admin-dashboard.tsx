@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Checkbox, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag } from "antd";
+import { App, Button, Checkbox, Form, Input, InputNumber, Modal, Pagination, Popconfirm, Select, Space, Switch, Table, Tag } from "antd";
 import type { TableColumnsType } from "antd";
 import { Database, Download, Gift, Globe2, Image as ImageIcon, KeyRound, Mail, PlugZap, Plus, RefreshCw, Save, Search, Send, ShieldCheck, SlidersHorizontal, Sparkles, Trash2, Upload, UserCog, UserRound, UsersRound } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -39,6 +39,9 @@ type UserEditorValue = {
 
 type AdminSectionKey = "overview" | "site" | "settings" | "users" | "prompts";
 
+const PROMPT_PAGE_SIZE = 20;
+const PROMPT_SEARCH_DEBOUNCE_MS = 300;
+
 const siteSocialItems: Array<{ key: SiteSocialKey; label: string; placeholder: string; icon: ReactNode }> = [
     { key: "email", label: "邮箱联系", placeholder: "mailto:contact@example.com", icon: <Mail className="size-4" /> },
     { key: "telegram", label: "Telegram", placeholder: "https://t.me/vozeb", icon: <Send className="size-4" /> },
@@ -51,10 +54,12 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
     const [promptForm] = Form.useForm<PromptFormValue>();
     const [userForm] = Form.useForm<UserEditorValue>();
     const logoInputRef = useRef<HTMLInputElement>(null);
+    const promptRequestIdRef = useRef(0);
     const [users, setUsers] = useState(initialUsers);
     const [settings, setSettings] = useState(initialSettings);
     const [prompts, setPrompts] = useState<Prompt[]>([]);
     const [promptCount, setPromptCount] = useState(initialPromptCount);
+    const [promptListTotal, setPromptListTotal] = useState(initialPromptCount);
     const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
     const [settingsLoading, setSettingsLoading] = useState(false);
     const [backupLoading, setBackupLoading] = useState(false);
@@ -63,9 +68,10 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
     const [fetchingModelId, setFetchingModelId] = useState("");
     const [promptSaving, setPromptSaving] = useState(false);
     const [promptsLoading, setPromptsLoading] = useState(false);
-    const [promptsLoaded, setPromptsLoaded] = useState(false);
     const [deletingPromptId, setDeletingPromptId] = useState("");
     const [promptSearch, setPromptSearch] = useState("");
+    const [debouncedPromptSearch, setDebouncedPromptSearch] = useState("");
+    const [promptPage, setPromptPage] = useState(1);
     const [selectedPromptIds, setSelectedPromptIds] = useState<string[]>([]);
     const [bulkDeletingPrompts, setBulkDeletingPrompts] = useState(false);
     const [userSearch, setUserSearch] = useState("");
@@ -98,16 +104,19 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         return users.filter((user) => [user.displayName, user.username, user.email || "", user.role === "admin" ? "管理员" : "普通用户", user.status === "active" ? "可用" : "禁用"].some((value) => value.toLowerCase().includes(keyword)));
     }, [userSearch, users]);
     const selectedUsers = useMemo(() => users.filter((user) => selectedUserIds.includes(user.id)), [selectedUserIds, users]);
-    const filteredPrompts = useMemo(() => {
-        const keyword = promptSearch.trim().toLowerCase();
-        if (!keyword) return prompts;
-        return prompts.filter((prompt) => [prompt.title, prompt.prompt, prompt.category, prompt.coverUrl || "", prompt.preview || "", ...prompt.tags].some((value) => value.toLowerCase().includes(keyword)));
-    }, [promptSearch, prompts]);
     const selectedPrompts = useMemo(() => prompts.filter((prompt) => selectedPromptIds.includes(prompt.id)), [prompts, selectedPromptIds]);
+    const promptListStart = promptListTotal ? (promptPage - 1) * PROMPT_PAGE_SIZE + 1 : 0;
+    const promptListEnd = Math.min(promptPage * PROMPT_PAGE_SIZE, promptListTotal);
 
     useEffect(() => {
-        if (activeSection === "prompts" && !promptsLoaded && !promptsLoading) void loadPrompts();
-    }, [activeSection, promptsLoaded, promptsLoading]);
+        const timer = window.setTimeout(() => setDebouncedPromptSearch(promptSearch.trim()), PROMPT_SEARCH_DEBOUNCE_MS);
+        return () => window.clearTimeout(timer);
+    }, [promptSearch]);
+
+    useEffect(() => {
+        if (activeSection !== "prompts") return;
+        void loadPrompts(promptPage, debouncedPromptSearch);
+    }, [activeSection, promptPage, debouncedPromptSearch]);
 
     const saveSettings = async (patch: Partial<AuthSettings>, successText = "设置已保存") => {
         setSettingsLoading(true);
@@ -266,9 +275,11 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             });
             const payload = (await response.json()) as { prompt?: Prompt; error?: string };
             if (!response.ok || !payload.prompt) throw new Error(payload.error || "新增提示词失败");
-            setPrompts((items) => [payload.prompt!, ...items]);
-            setPromptCount((count) => count + 1);
             promptForm.resetFields();
+            setPromptPage(1);
+            setPromptSearch("");
+            setDebouncedPromptSearch("");
+            void loadPrompts(1, "");
             message.success("公共提示词已新增");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "新增提示词失败");
@@ -283,9 +294,16 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             const response = await fetch(`/api/admin/prompts/${id}`, { method: "DELETE" });
             const payload = (await response.json()) as { error?: string };
             if (!response.ok) throw new Error(payload.error || "删除提示词失败");
-            setPrompts((items) => items.filter((item) => item.id !== id));
             setSelectedPromptIds((ids) => ids.filter((item) => item !== id));
+            const nextTotal = Math.max(0, promptListTotal - 1);
+            const nextPage = Math.min(promptPage, Math.max(1, Math.ceil(nextTotal / PROMPT_PAGE_SIZE)));
             setPromptCount((count) => Math.max(0, count - 1));
+            setPromptListTotal(nextTotal);
+            if (nextPage !== promptPage) {
+                setPromptPage(nextPage);
+            } else {
+                void loadPrompts(nextPage, debouncedPromptSearch);
+            }
             message.success("公共提示词已删除");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "删除提示词失败");
@@ -304,9 +322,16 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                 const payload = (await response.json()) as { error?: string };
                 if (!response.ok) throw new Error(payload.error || "批量删除提示词失败");
             }
-            setPrompts((items) => items.filter((item) => !ids.includes(item.id)));
             setSelectedPromptIds([]);
+            const nextTotal = Math.max(0, promptListTotal - ids.length);
+            const nextPage = Math.min(promptPage, Math.max(1, Math.ceil(nextTotal / PROMPT_PAGE_SIZE)));
             setPromptCount((count) => Math.max(0, count - ids.length));
+            setPromptListTotal(nextTotal);
+            if (nextPage !== promptPage) {
+                setPromptPage(nextPage);
+            } else {
+                void loadPrompts(nextPage, debouncedPromptSearch);
+            }
             message.success(`已删除 ${ids.length} 条公共提示词`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "批量删除提示词失败");
@@ -315,19 +340,25 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         }
     };
 
-    const loadPrompts = async () => {
+    const loadPrompts = async (page = promptPage, keyword = debouncedPromptSearch) => {
+        const requestId = promptRequestIdRef.current + 1;
+        promptRequestIdRef.current = requestId;
         setPromptsLoading(true);
         try {
-            const response = await fetch("/api/admin/prompts");
-            const payload = (await response.json()) as { prompts?: Prompt[]; error?: string };
+            const params = new URLSearchParams({ page: String(page), pageSize: String(PROMPT_PAGE_SIZE) });
+            if (keyword) params.set("keyword", keyword);
+            const response = await fetch(`/api/admin/prompts?${params.toString()}`);
+            const payload = (await response.json()) as { prompts?: Prompt[]; total?: number; scopeTotal?: number; error?: string };
             if (!response.ok || !payload.prompts) throw new Error(payload.error || "加载提示词失败");
+            if (requestId !== promptRequestIdRef.current) return;
             setPrompts(payload.prompts);
-            setPromptCount(payload.prompts.length);
-            setPromptsLoaded(true);
+            setPromptListTotal(Number(payload.total ?? payload.prompts.length));
+            setPromptCount(Number(payload.scopeTotal ?? payload.total ?? payload.prompts.length));
+            setSelectedPromptIds((ids) => ids.filter((id) => payload.prompts!.some((prompt) => prompt.id === id)));
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "加载提示词失败");
+            if (requestId === promptRequestIdRef.current) message.error(error instanceof Error ? error.message : "加载提示词失败");
         } finally {
-            setPromptsLoading(false);
+            if (requestId === promptRequestIdRef.current) setPromptsLoading(false);
         }
     };
 
@@ -1100,7 +1131,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                         <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">已收录的公共提示词会同步展示到用户端提示词库。</p>
                                     </div>
                                     <span className="shrink-0 rounded-md bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600 dark:bg-white/10 dark:text-stone-300">
-                                        {filteredPrompts.length === promptCount ? `${promptCount} 条` : `${filteredPrompts.length} / ${promptCount} 条`}
+                                        {promptListTotal ? `${promptListStart}-${promptListEnd} / ${promptListTotal} 条` : "0 条"}
                                     </span>
                                 </div>
                                 <div className="flex flex-col gap-3 border-t border-stone-200/70 px-4 py-4 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -1110,7 +1141,10 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                         allowClear
                                         placeholder="搜索标题、分类、标签或提示词内容"
                                         value={promptSearch}
-                                        onChange={(event) => setPromptSearch(event.target.value)}
+                                        onChange={(event) => {
+                                            setPromptSearch(event.target.value);
+                                            setPromptPage(1);
+                                        }}
                                     />
                                     <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
                                         <span className="text-xs text-stone-500 dark:text-stone-400">已选 {selectedPrompts.length} 条</span>
@@ -1122,7 +1156,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                     </div>
                                 </div>
                                 <div className="space-y-3 px-4 pb-4 md:hidden">
-                                    {filteredPrompts.map((prompt) => (
+                                    {prompts.map((prompt) => (
                                         <div key={prompt.id} className="rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-800 dark:bg-stone-950">
                                             <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-3">
                                                 <Checkbox checked={selectedPromptIds.includes(prompt.id)} onChange={(event) => setSelectedPromptIds((ids) => (event.target.checked ? Array.from(new Set([...ids, prompt.id])) : ids.filter((id) => id !== prompt.id)))} />
@@ -1161,15 +1195,33 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                             </div>
                                         </div>
                                     ))}
-                                    {!filteredPrompts.length ? <div className="rounded-lg border border-dashed border-stone-300 py-12 text-center text-sm text-stone-500 dark:border-stone-700">暂无提示词</div> : null}
+                                    {!prompts.length && !promptsLoading ? <div className="rounded-lg border border-dashed border-stone-300 py-12 text-center text-sm text-stone-500 dark:border-stone-700">暂无提示词</div> : null}
+                                    {promptListTotal > PROMPT_PAGE_SIZE ? (
+                                        <Pagination
+                                            className="pt-1"
+                                            current={promptPage}
+                                            pageSize={PROMPT_PAGE_SIZE}
+                                            total={promptListTotal}
+                                            showSizeChanger={false}
+                                            size="small"
+                                            onChange={(page) => setPromptPage(page)}
+                                        />
+                                    ) : null}
                                 </div>
                                 <div className="hidden md:block">
                                     <Table
                                         rowKey="id"
                                         columns={promptColumns}
-                                        dataSource={filteredPrompts}
+                                        dataSource={prompts}
                                         loading={promptsLoading}
-                                        pagination={{ pageSize: 6, hideOnSinglePage: true }}
+                                        pagination={{
+                                            current: promptPage,
+                                            pageSize: PROMPT_PAGE_SIZE,
+                                            total: promptListTotal,
+                                            showSizeChanger: false,
+                                            showTotal: (total, range) => `${range[0]}-${range[1]} / ${total} 条`,
+                                            onChange: (page) => setPromptPage(page),
+                                        }}
                                         size="middle"
                                         scroll={{ x: 760 }}
                                         rowSelection={{
