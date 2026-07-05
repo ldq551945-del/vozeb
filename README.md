@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="web/public/logo.svg?v=0.8.8-white" width="108" alt="VOZEB logo">
+  <img src="web/public/logo.svg?v=0.8.9-white" width="108" alt="VOZEB logo">
 </p>
 
 <h1 align="center">VOZEB</h1>
 
 <p align="center">
   <a href="https://github.com/csyqlz/vozeb"><img src="https://img.shields.io/github/stars/csyqlz/vozeb?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.8.8-2563eb?style=flat-square" alt="Version"></a>
+  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.8.9-2563eb?style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://vercel.com/"><img src="https://img.shields.io/badge/Vercel-ready-000000?style=flat-square&logo=vercel" alt="Vercel ready"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
@@ -18,11 +18,17 @@
 
 VOZEB 是一款面向 AI 图片创作、素材管理和视觉方案迭代的开源工作台。它把无限画布、AI 生成、参考图编辑、提示词库、素材沉淀、用户权限、管理员配置和本地 Agent 能力放到同一个工作流里，适合个人创作者、本地部署场景和小团队内部使用。
 
-VOZEB 当前版本为 `v0.8.8`，这是基于原创开源画布项目继续开发的二开版本。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
+VOZEB 当前版本为 `v0.8.9`，这是基于原创开源画布项目继续开发的二开版本。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
 
 版本更新记录请查看 [GitHub Releases](https://github.com/csyqlz/vozeb/releases)。
 
 ## 最新更新
+
+`v0.8.9` 修复服务器部署后默认渠道生成任务可能统一显示 `fetch failed` 的问题，后台任务会优先通过 `VOZEB_INTERNAL_ORIGIN` 或本机 `127.0.0.1:3000` 访问站内代理。
+
+`v0.8.9` 修复站内内部回调与 Node dispatcher 不兼容导致的误报连接失败，API Key 正确时不会再因为这层回调异常直接失败。
+
+`v0.8.9` 优化默认渠道连接失败提示，生成失败时会提示检查后台 Base URL、服务器网络、DNS、HTTPS 证书或代理配置，不向前端暴露接口密钥。
 
 `v0.8.8` 优化管理员密码重置脚本，重置前仍会自动备份 `.data/auth.json`，但只保留最近 3 份密码重置备份，避免多次修改后长期占用服务器空间。
 
@@ -75,7 +81,28 @@ docker compose up -d
 
 打开 `http://服务器IP:3000`，第一次注册的账号会自动成为管理员。这个首个管理员账号用于初始化站点，管理员登录后可进入 `管理员后台`，配置网站标题、Logo、SEO、注册策略、邮箱服务、模型渠道、默认模型、用户积分和公共提示词库。
 
-### 3. 配置邮箱注册
+### 3. 配置默认模型渠道
+
+进入 `管理员后台 -> 系统设置 -> 模型渠道`，填写你的 OpenAI 兼容接口或 Gemini 接口 `Base URL`、`API Key`、模型名称，并启用默认渠道。默认渠道由服务端代理请求，用户前端不会看到管理员保存的 API Key。
+
+如果部署后生图、视频或画布生成全部提示 `fetch failed`，通常是服务器无法访问模型接口，或容器/反向代理无法从服务端回调自己的公网域名。请按下面顺序检查：
+
+```bash
+# 1. 容器内确认 VOZEB 可以回调自己的站内代理
+docker compose exec app sh -lc 'echo $VOZEB_INTERNAL_ORIGIN'
+
+# 2. 默认值建议保持为容器内部地址
+VOZEB_INTERNAL_ORIGIN=http://127.0.0.1:3000
+
+# 3. 如果模型接口需要代理，给容器补充代理变量
+HTTPS_PROXY=http://127.0.0.1:7890
+HTTP_PROXY=http://127.0.0.1:7890
+ALL_PROXY=http://127.0.0.1:7890
+```
+
+`docker-compose.yml` 和低内存 compose 已默认写入 `VOZEB_INTERNAL_ORIGIN=http://127.0.0.1:3000`。如果你的服务不是 3000 端口，请改成实际内部端口。Base URL 请填写模型服务商提供的地址，例如 `https://api.example.com/v1`；不要填写 VOZEB 自己的访问地址。
+
+### 4. 配置邮箱注册
 
 进入 `管理员后台 -> 系统设置 -> 账号策略` 打开“邮箱注册”。再进入同页的“邮箱服务”填写 SMTP：
 
@@ -87,11 +114,11 @@ QQ 邮箱：smtp.qq.com / 465 / SSL 开启
 
 保存前可以点击“测试邮箱”。测试成功后，普通用户注册必须获取 6 位邮箱验证码；未验证邮箱不能直接创建账号。忘记密码和修改绑定邮箱也会复用这套 SMTP。
 
-### 4. 用户与账号管理
+### 5. 用户与账号管理
 
 普通用户和管理员都可以从右上角账号菜单进入 `个人资料`，修改昵称、绑定邮箱和登录密码。管理员可在后台 `用户管理` 中修改用户昵称、邮箱、角色、状态、积分余额，必要时重置用户密码或删除用户。系统会阻止删除当前管理员和最后一个管理员，避免后台被锁死。
 
-### 5. 管理员忘记密码
+### 6. 管理员忘记密码
 
 如果管理员还能登录后台，建议直接在 `管理员后台 -> 用户管理` 里重置密码。如果所有管理员都忘记密码，可以在服务器终端使用离线脚本修改 `.data/auth.json` 中指定管理员的密码哈希。脚本必须明确指定 `--username`、`--email` 或 `--id`，不会自动选择账号；写入前会先备份当前账号数据库到 `.data/restore-backups`，密码重置备份只保留最近 3 份，避免长期占用空间；脚本不会删除用户、提示词、生成日志或素材。
 
@@ -126,7 +153,7 @@ pnpm run reset:admin-password -- --data-dir "/path/to/.data" --username admin --
 
 命令完成后，用新密码重新登录。旧登录会话会被清理，已经登录的该管理员需要重新登录。
 
-### 6. 首页 Footer 和社交媒体
+### 7. 首页 Footer 和社交媒体
 
 进入 `管理员后台 -> 网站设置 -> 首页收尾与社交媒体`，可以配置首页底部内容：
 
@@ -142,7 +169,7 @@ Instagram：默认开启，可填写 Instagram 主页链接
 
 每个社交媒体都有单独的显示开关。关闭后首页 Footer 不会显示该入口。
 
-### 7. 更新版本
+### 8. 更新版本
 
 低配服务器更新只需要拉取新镜像并重启：
 
@@ -257,6 +284,9 @@ services:
       - "3000:3000"
     volumes:
       - vozeb-data:/app/web/.data
+    environment:
+      VOZEB_DATA_DIR: /app/web/.data
+      VOZEB_INTERNAL_ORIGIN: http://127.0.0.1:3000
     restart: unless-stopped
 
 volumes:

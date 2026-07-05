@@ -18,6 +18,7 @@ const child = spawn(process.execPath, ["server.js"], {
         PORT: process.env.PORT || "3000",
         HOSTNAME: process.env.HOSTNAME || "0.0.0.0",
         VOZEB_DATA_DIR: process.env.VOZEB_DATA_DIR || path.join(webRoot, ".data"),
+        VOZEB_INTERNAL_ORIGIN: process.env.VOZEB_INTERNAL_ORIGIN || `http://127.0.0.1:${process.env.PORT || "3000"}`,
     },
     stdio: "inherit",
 });

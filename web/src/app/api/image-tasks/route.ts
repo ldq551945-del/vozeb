@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAuthSettings } from "@/lib/auth/store";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
+import { fetchInternalApi, isInternalApiBaseUrl, resolveInternalOrigin } from "@/lib/server/internal-origin";
+import { toSafeGenerationErrorMessage } from "@/lib/server/generation-errors";
 import { countActiveImageTasksForUser, createImageTask, updateImageTask, type ImageTask, type ImageTaskConfig, type ImageTaskReference } from "@/lib/server/image-task-store";
 import { isGenerationSource, recordGenerationLog } from "@/lib/server/generation-log-store";
 
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
         mask: body.mask?.dataUrl ? body.mask : undefined,
     });
     const cookie = request.headers.get("cookie") || "";
-    const origin = new URL(request.url).origin;
+    const origin = resolveInternalOrigin(new URL(request.url).origin);
     void runImageTask(task, origin, cookie);
 
     return NextResponse.json({ task: publicTask(task) });
@@ -101,7 +103,7 @@ async function runImageTask(task: ImageTask, origin: string, cookie: string) {
         updateImageTask(task.id, { status: "success", result: { dataUrl: result.dataUrl }, pointsRemaining: result.pointsRemaining });
         await writeImageGenerationLog(task, "success", result.dataUrl, Date.now() - task.createdAt);
     } catch (error) {
-        const message = error instanceof Error ? error.message : "图片生成失败";
+        const message = toSafeGenerationErrorMessage(error, "图片生成失败");
         updateImageTask(task.id, { status: "error", error: message });
         await writeImageGenerationLog(task, "failed", "", Date.now() - task.createdAt, message);
     }
@@ -152,10 +154,10 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
         if (requestSize) formData.set("size", requestSize);
         task.references.forEach((reference, index) => formData.append("image", dataUrlToFile(reference.dataUrl, reference.name || `reference-${index + 1}.png`, reference.type)));
         if (task.mask) formData.set("mask", dataUrlToFile(task.mask.dataUrl, task.mask.name || "mask.png", task.mask.type));
-        response = await fetch(url, { method: "POST", headers, body: formData, cache: "no-store" });
+        response = await taskFetch(config, url, { method: "POST", headers, body: formData, cache: "no-store" });
     } else {
         headers.set("content-type", "application/json");
-        response = await fetch(url, {
+        response = await taskFetch(config, url, {
             method: "POST",
             headers,
             body: JSON.stringify({
@@ -181,7 +183,7 @@ async function runGeminiImageTask(task: ImageTask, origin: string, cookie: strin
     const config = task.config;
     const parts: GeminiPart[] = [{ text: withSystemPrompt(config, task.prompt) }];
     task.references.forEach((reference) => parts.push(toGeminiImagePart(reference.dataUrl, reference.type)));
-    const response = await fetch(`${geminiApiUrl(config, "generateContent", origin)}`, {
+    const response = await taskFetch(config, `${geminiApiUrl(config, "generateContent", origin)}`, {
         method: "POST",
         headers: geminiHeaders(config, cookie),
         body: JSON.stringify({
@@ -239,6 +241,10 @@ function taskHeaders(config: ImageTaskConfig, cookie: string) {
     if (config.apiFormat === "gemini") headers.set("x-goog-api-key", config.apiKey);
     else headers.set("authorization", `Bearer ${config.apiKey}`);
     return headers;
+}
+
+function taskFetch(config: ImageTaskConfig, url: string, init: RequestInit) {
+    return isInternalApiBaseUrl(config.baseUrl) ? fetchInternalApi(url, init) : fetch(url, init);
 }
 
 function geminiHeaders(config: ImageTaskConfig, cookie: string) {

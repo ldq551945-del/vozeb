@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
+import { fetchInternalApi, isInternalApiBaseUrl, resolveInternalOrigin } from "@/lib/server/internal-origin";
+import { toSafeGenerationErrorMessage } from "@/lib/server/generation-errors";
 import { createTextTask, updateTextTask, type TextTask, type TextTaskConfig } from "@/lib/server/text-task-store";
 import type { AiTextMessage } from "@/services/api/image";
 
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
 
     const task = createTextTask({ userId: currentUser.id, config, messages });
     const cookie = request.headers.get("cookie") || "";
-    const origin = new URL(request.url).origin;
+    const origin = resolveInternalOrigin(new URL(request.url).origin);
     void runTextTask(task, origin, cookie);
 
     return NextResponse.json({ task: publicTask(task) });
@@ -64,7 +66,7 @@ async function runTextTask(task: TextTask, origin: string, cookie: string) {
             config: clearSecret(task.config),
         });
     } catch (error) {
-        const message = error instanceof Error ? error.message : "文本生成失败";
+        const message = toSafeGenerationErrorMessage(error, "文本生成失败");
         updateTextTask(task.id, { status: "error", error: message, messages: [], config: clearSecret(task.config) });
     }
 }
@@ -73,7 +75,7 @@ async function runOpenAiTextTask(task: TextTask, origin: string, cookie: string)
     const config = task.config;
     const headers = taskHeaders(config, cookie);
     headers.set("content-type", "application/json");
-    const response = await fetch(taskUrl(config, "/responses", origin), {
+    const response = await taskFetch(config, taskUrl(config, "/responses", origin), {
         method: "POST",
         headers,
         body: JSON.stringify({ model: config.model, input: toResponseInput(withSystemMessage(config, task.messages)) }),
@@ -87,7 +89,7 @@ async function runOpenAiTextTask(task: TextTask, origin: string, cookie: string)
 
 async function runGeminiTextTask(task: TextTask, origin: string, cookie: string) {
     const config = task.config;
-    const response = await fetch(geminiApiUrl(config, "generateContent", origin), {
+    const response = await taskFetch(config, geminiApiUrl(config, "generateContent", origin), {
         method: "POST",
         headers: geminiHeaders(config, cookie),
         body: JSON.stringify(toGeminiBody(config, task.messages)),
@@ -257,6 +259,10 @@ function taskHeaders(config: TextTaskConfig, cookie: string) {
     if (config.apiFormat === "gemini") headers.set("x-goog-api-key", config.apiKey);
     else headers.set("authorization", `Bearer ${config.apiKey}`);
     return headers;
+}
+
+function taskFetch(config: TextTaskConfig, url: string, init: RequestInit) {
+    return isInternalApiBaseUrl(config.baseUrl) ? fetchInternalApi(url, init) : fetch(url, init);
 }
 
 function geminiHeaders(config: TextTaskConfig, cookie: string) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { consumeUserPoints, getAuthSettings, isQuotaExceededError, refundUserPoints, type ApiCallFormat, type PointUsageKind } from "@/lib/auth/store";
 import { getCurrentUser } from "@/lib/auth/session";
+import { DEFAULT_CHANNEL_CONNECT_ERROR } from "@/lib/server/generation-errors";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
 
 export const runtime = "nodejs";
@@ -84,8 +85,8 @@ async function proxySystemRequest(request: Request, context: RouteContext) {
         });
     } catch (error) {
         await refundConsumedPoints();
-        console.error("System API proxy request failed", error);
-        return NextResponse.json({ error: "默认接口请求失败，请稍后重试" }, { status: 502, headers: responseHeaders(new Headers(), null, refundedPointsRemaining) });
+        console.error("System API proxy request failed", error instanceof Error ? error.message : error);
+        return NextResponse.json({ error: DEFAULT_CHANNEL_CONNECT_ERROR }, { status: 502, headers: responseHeaders(new Headers(), null, refundedPointsRemaining) });
     }
 
     if (!upstream.ok && pointsResult) {
