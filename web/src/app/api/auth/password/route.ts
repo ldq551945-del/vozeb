@@ -17,7 +17,7 @@ export async function PATCH(request: Request) {
             newPassword: typeof body.newPassword === "string" ? body.newPassword : "",
         });
         const response = NextResponse.json({ ok: true });
-        clearSessionCookie(response);
+        clearSessionCookie(response, request);
         return response;
     } catch (error) {
         if (isAuthInputError(error)) return NextResponse.json({ error: error.message }, { status: error.status });

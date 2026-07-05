@@ -6,7 +6,9 @@
 
 ## v0.9.2 - 2026-07-05
 
-- [修复] 修复 HTTP 直连部署时注册或登录成功后仍被判定未登录、反复跳回登录页的问题；Session Cookie 会根据 `X-Forwarded-Proto`、`Forwarded` 或实际访问协议自动决定是否启用 `Secure`。
+- [修复] 修复 HTTP 直连部署时注册或登录成功后仍被判定未登录、反复跳回登录页的问题；Session Cookie 会根据 `X-Forwarded-Proto` 或实际访问协议自动决定是否启用 `Secure`。
+- [修复] 修复前端版本按钮兜底值仍显示 `v0.9.1` 的问题，确保本地开发和未注入环境变量的 Docker 镜像也显示 `v0.9.2`。
+- [优化] 修改密码后清理登录态也会按当前请求协议写入 Cookie 清理指令，和登录、注册、登出保持一致。
 - [优化] 新增 `VOZEB_COOKIE_SECURE=true/false` 强制开关，便于特殊反向代理或内网部署环境手动指定 Cookie 安全模式。
 - [文档] README 补充 HTTP 直连与 HTTPS 反向代理下登录 Cookie 的部署说明，避免首次搭建后误以为数据库或账号注册失败。
 
