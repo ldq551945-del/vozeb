@@ -79,7 +79,10 @@ const DEFAULT_SITE_SOCIALS: SiteSocialSettings = {
     instagram: { enabled: true, label: "Instagram", url: "https://instagram.com/vozeb" },
 };
 
-const DEFAULT_SITE_FRIEND_LINKS: SiteFriendLink[] = [{ id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true }];
+const DEFAULT_SITE_FRIEND_LINKS: SiteFriendLink[] = [
+    { id: "vozeb-home", label: "VOZEB", url: "https://www.vozeb.com/", enabled: true },
+    { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
+];
 
 export type MailSettings = {
     provider: string;
@@ -800,18 +803,30 @@ function normalizeSiteSettings(settings: Partial<SiteSettings> | undefined): Sit
 
 function normalizeSiteFriendLinks(settings: unknown): SiteFriendLink[] {
     const links = Array.isArray(settings) ? settings : DEFAULT_SITE_FRIEND_LINKS;
-    return links
+    const normalized = links
         .map((link, index) => {
             const value = link as Partial<SiteFriendLink>;
             return {
                 id: normalizeText(value.id, `friend-${index + 1}`, 80),
-                label: normalizeText(value.label, "友情链接", 32),
+                label: normalizeText(value.url?.replace(/\/$/, "") === "https://www.vozeb.com" ? "VOZEB" : value.label, "友情链接", 32),
                 url: normalizeLinkUrl(value.url, ""),
                 enabled: value.enabled !== false,
             };
         })
         .filter((link) => link.url)
         .slice(0, 12);
+    for (const link of DEFAULT_SITE_FRIEND_LINKS) {
+        if (normalized.some((item) => item.id === link.id || item.url.replace(/\/$/, "") === link.url.replace(/\/$/, ""))) continue;
+        normalized.push(link);
+    }
+    const defaultOrdered = DEFAULT_SITE_FRIEND_LINKS.flatMap((link) => {
+        const normalizedUrl = link.url.replace(/\/$/, "");
+        const matched = normalized.find((item) => item.id === link.id || item.url.replace(/\/$/, "") === normalizedUrl);
+        return matched ? [matched] : [];
+    });
+    const defaultKeys = new Set(DEFAULT_SITE_FRIEND_LINKS.flatMap((link) => [link.id, link.url.replace(/\/$/, "")]));
+    const others = normalized.filter((link) => !defaultKeys.has(link.id) && !defaultKeys.has(link.url.replace(/\/$/, "")));
+    return [...defaultOrdered, ...others].slice(0, 12);
 }
 
 function normalizeSiteSocials(settings: Partial<SiteSocialSettings> | undefined): SiteSocialSettings {

@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="web/public/logo.svg?v=0.8.6-white" width="108" alt="VOZEB logo">
+  <img src="web/public/logo.svg?v=0.8.7-white" width="108" alt="VOZEB logo">
 </p>
 
 <h1 align="center">VOZEB</h1>
 
 <p align="center">
   <a href="https://github.com/csyqlz/vozeb"><img src="https://img.shields.io/github/stars/csyqlz/vozeb?style=flat-square&logo=github" alt="GitHub stars"></a>
-  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.8.6-2563eb?style=flat-square" alt="Version"></a>
+  <a href="VERSION"><img src="https://img.shields.io/badge/version-v0.8.7-2563eb?style=flat-square" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-f97316?style=flat-square" alt="License"></a>
   <a href="https://vercel.com/"><img src="https://img.shields.io/badge/Vercel-ready-000000?style=flat-square&logo=vercel" alt="Vercel ready"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-16.2-000000?style=flat-square&logo=nextdotjs" alt="Next.js"></a>
@@ -18,17 +18,19 @@
 
 VOZEB 是一款面向 AI 图片创作、素材管理和视觉方案迭代的开源工作台。它把无限画布、AI 生成、参考图编辑、提示词库、素材沉淀、用户权限、管理员配置和本地 Agent 能力放到同一个工作流里，适合个人创作者、本地部署场景和小团队内部使用。
 
-VOZEB 当前版本为 `v0.8.6`，这是基于原创开源画布项目继续开发的二开版本。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
+VOZEB 当前版本为 `v0.8.7`，这是基于原创开源画布项目继续开发的二开版本。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
 
 版本更新记录请查看 [GitHub Releases](https://github.com/csyqlz/vozeb/releases)。
 
 ## 最新更新
 
-`v0.8.6` 优化积分记录显示，系统接口扣除会按“模型 + 生成图片/视频调用扣除”展示，失败返还也会显示对应的生成类型。
+`v0.8.7` 保留页面预加载体验，同时将配置弹窗、提示词库、素材库和版本更新弹窗改为空闲预热，减少首页与工作台首屏包体压力。
 
-`v0.8.6` 修复生图/视频工作台生成结果左上角选择框的双层视觉问题，并优化深色/浅色模式下的勾选可读性。
+`v0.8.7` 优化首页 Footer，桌面端保持一行横排，手机端改为品牌与社交入口同排、版权独立展示、条款与友情链接左右分组，并默认加入标题 `VOZEB`、地址 `www.vozeb.com` 的友情链接。
 
-`v0.8.6` 放宽积分记录弹窗宽度并支持文案换行，完整显示模型、生成图片/视频调用扣除和失败返还信息。
+`v0.8.7` 修复生图/视频工作台生成中占位仍显示选择框的问题，并将浅色模式结果选择框优化为白底黑勾。
+
+`v0.8.7` 新增终端重置管理员密码脚本，管理员忘记密码时可在本地或 Docker 容器中按用户名、邮箱或用户 ID 重置指定管理员账号，执行前会自动备份 `.data/auth.json`。
 
 `v0.8.6` 统一文档站点 logo 与 favicon 为 VOZEB 标志，并修复 `pnpm run format:check` 历史格式检查失败；不改变数据库结构。
 
@@ -85,7 +87,42 @@ QQ 邮箱：smtp.qq.com / 465 / SSL 开启
 
 普通用户和管理员都可以从右上角账号菜单进入 `个人资料`，修改昵称、绑定邮箱和登录密码。管理员可在后台 `用户管理` 中修改用户昵称、邮箱、角色、状态、积分余额，必要时重置用户密码或删除用户。系统会阻止删除当前管理员和最后一个管理员，避免后台被锁死。
 
-### 5. 首页 Footer 和社交媒体
+### 5. 管理员忘记密码
+
+如果管理员还能登录后台，建议直接在 `管理员后台 -> 用户管理` 里重置密码。如果所有管理员都忘记密码，可以在服务器终端使用离线脚本修改 `.data/auth.json` 中指定管理员的密码哈希。脚本必须明确指定 `--username`、`--email` 或 `--id`，不会自动选择账号；写入前会先备份当前账号数据库到 `.data/restore-backups`，不会删除用户、提示词、生成日志或素材。
+
+本地源码部署时，在 `web` 目录执行：
+
+```bash
+cd web
+pnpm run reset:admin-password -- --username admin --password "NewPass123!"
+```
+
+Docker Compose 部署时，在项目根目录执行：
+
+```bash
+docker compose exec app node /app/web/scripts/reset-admin-password.mjs --username admin --password "NewPass123!"
+docker compose restart app
+```
+
+如果忘记管理员用户名，可以先列出管理员账号：
+
+```bash
+cd web
+pnpm run reset:admin-password -- --list-admins
+docker compose exec app node /app/web/scripts/reset-admin-password.mjs --list-admins
+```
+
+如果使用了自定义数据目录，手动指定数据目录即可：
+
+```bash
+cd web
+pnpm run reset:admin-password -- --data-dir "/path/to/.data" --username admin --password "NewPass123!"
+```
+
+命令完成后，用新密码重新登录。旧登录会话会被清理，已经登录的该管理员需要重新登录。
+
+### 6. 首页 Footer 和社交媒体
 
 进入 `管理员后台 -> 网站设置 -> 首页收尾与社交媒体`，可以配置首页底部内容：
 
@@ -101,7 +138,7 @@ Instagram：默认开启，可填写 Instagram 主页链接
 
 每个社交媒体都有单独的显示开关。关闭后首页 Footer 不会显示该入口。
 
-### 6. 更新版本
+### 7. 更新版本
 
 低配服务器更新只需要拉取新镜像并重启：
 

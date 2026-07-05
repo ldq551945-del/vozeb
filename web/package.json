@@ -1,6 +1,6 @@
 {
     "name": "vozeb",
-    "version": "0.8.6",
+    "version": "0.8.7",
     "private": true,
     "type": "module",
     "scripts": {
@@ -8,6 +8,7 @@
         "build": "next build",
         "start": "next start",
         "start:standalone": "node scripts/start-standalone.mjs",
+        "reset:admin-password": "node scripts/reset-admin-password.mjs",
         "typecheck": "tsc --noEmit --pretty false",
         "format": "prettier --write .",
         "format:check": "prettier --check ."

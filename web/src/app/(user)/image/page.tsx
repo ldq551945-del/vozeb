@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, CheckSquare, ClipboardPaste, Download, FolderPlus, History, ImagePlus, LoaderCircle, PenLine, Plus, SlidersHorizontal, Sparkles, Trash2, Upload } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { App, Button, Checkbox, Drawer, Empty, Image, Input, Modal, Tag, Tooltip, Typography } from "antd";
 import localforage from "localforage";
@@ -8,9 +9,8 @@ import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
-import { PromptSelectDialog } from "@/components/prompts/prompt-select-dialog";
 import { requestCreditCost } from "@/constant/credits";
-import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
+import type { InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -90,6 +90,10 @@ type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => 
 const RESULT_ACTION_BUTTON_CLASS = "min-w-0 px-1.5 [&_.ant-btn-icon]:shrink-0 [&>span:last-child]:min-w-0 [&>span:last-child]:truncate";
 const logStore = localforage.createInstance({ name: APP_STORAGE_NAME, storeName: "image_generation_logs" });
 const legacyLogStore = localforage.createInstance({ name: LEGACY_APP_STORAGE_NAME, storeName: "image_generation_logs" });
+const loadPromptSelectDialog = () => import("@/components/prompts/prompt-select-dialog").then((module) => module.PromptSelectDialog);
+const loadAssetPickerModal = () => import("@/app/(user)/canvas/components/asset-picker-modal").then((module) => module.AssetPickerModal);
+const PromptSelectDialog = dynamic(loadPromptSelectDialog, { ssr: false, loading: () => null });
+const AssetPickerModal = dynamic(loadAssetPickerModal, { ssr: false, loading: () => null });
 
 export default function ImagePage() {
     const { message } = App.useApp();
@@ -133,6 +137,13 @@ export default function ImagePage() {
 
     useEffect(() => {
         void refreshLogs();
+    }, []);
+
+    useEffect(() => {
+        return preloadOnIdle(() => {
+            void loadPromptSelectDialog();
+            void loadAssetPickerModal();
+        });
     }, []);
 
     useEffect(() => {
@@ -767,7 +778,7 @@ export default function ImagePage() {
                                             onRetry={() => retryResult(index)}
                                         />
                                     ) : (
-                                        <PendingImageCard key={result.id} large={results.length === 1} selected={selectedResultIds.includes(result.id)} onSelectedChange={(checked) => toggleResultSelected(result.id, checked)} />
+                                        <PendingImageCard key={result.id} large={results.length === 1} />
                                     ),
                                 )}
                             </div>
@@ -810,8 +821,8 @@ export default function ImagePage() {
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>
             </Drawer>
-            <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} />
-            <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} />
+            {promptDialogOpen ? <PromptSelectDialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen} onSelect={setPrompt} /> : null}
+            {assetPickerOpen ? <AssetPickerModal open={assetPickerOpen} defaultTab="my-assets" onInsert={(payload) => void insertPickedAsset(payload)} onClose={() => setAssetPickerOpen(false)} /> : null}
             <Modal title="删除生成记录" open={deleteConfirmOpen} onCancel={() => setDeleteConfirmOpen(false)} onOk={deleteSelectedLogs} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
                 确定删除选中的 {selectedLogIds.length} 条生成记录吗？
             </Modal>
@@ -902,10 +913,9 @@ function ResultImageCard({
     );
 }
 
-function PendingImageCard({ large, selected, onSelectedChange }: { large?: boolean; selected?: boolean; onSelectedChange?: (checked: boolean) => void }) {
+function PendingImageCard({ large }: { large?: boolean }) {
     return (
         <div className={`relative overflow-hidden rounded-lg border border-sky-200 bg-sky-50/80 dark:border-sky-500/25 dark:bg-sky-950/20 ${large ? "h-[240px]" : "h-[220px]"}`}>
-            <ResultSelectCheckbox selected={selected} onSelectedChange={onSelectedChange} />
             <div
                 className="absolute inset-0 opacity-70 dark:opacity-40"
                 style={{
@@ -942,7 +952,20 @@ function FailedImageCard({ error, large, selected, onSelectedChange, onRetry }: 
 
 function ResultSelectCheckbox({ selected, onSelectedChange }: { selected?: boolean; onSelectedChange?: (checked: boolean) => void }) {
     if (!onSelectedChange) return null;
-    return <Checkbox aria-label="选择生成结果" className="result-select-checkbox absolute left-2 top-2 z-10" checked={selected} onClick={(event) => event.stopPropagation()} onChange={(event) => onSelectedChange(event.target.checked)} />;
+    return (
+        <button
+            type="button"
+            aria-label="选择生成结果"
+            aria-pressed={Boolean(selected)}
+            className={`absolute left-2 top-2 z-10 inline-flex size-6 items-center justify-center rounded-lg border shadow-sm backdrop-blur transition ${selected ? "border-stone-400 bg-white text-stone-950 shadow-stone-950/15 dark:border-white/70 dark:bg-black/45 dark:text-white dark:shadow-black/45" : "border-stone-300 bg-white/70 hover:border-stone-500 dark:border-white/55 dark:bg-black/45 dark:hover:border-white"}`}
+            onClick={(event) => {
+                event.stopPropagation();
+                onSelectedChange(!selected);
+            }}
+        >
+            {selected ? <Check className="size-3.5 stroke-[3]" /> : null}
+        </button>
+    );
 }
 
 function updateResultAt(results: GenerationResult[], index: number, next: Partial<GenerationResult>) {
@@ -1376,4 +1399,15 @@ function snapshotFromLog(log: GenerationLog, fallbackConfig: AiConfig): Generati
             count: "1",
         },
     };
+}
+
+function preloadOnIdle(task: () => void) {
+    const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+        cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(task, { timeout: 2500 });
+    if (idleId !== undefined) return () => idleWindow.cancelIdleCallback?.(idleId);
+    const timer = window.setTimeout(task, 1200);
+    return () => window.clearTimeout(timer);
 }

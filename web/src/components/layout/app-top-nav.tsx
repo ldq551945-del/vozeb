@@ -1,12 +1,12 @@
 "use client";
 
 import { Menu } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
-import { AppConfigModal } from "@/components/layout/app-config-modal";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,13 @@ type PublicSiteSettings = {
     logoUrl: string;
 };
 
+const loadAppConfigModal = () => import("@/components/layout/app-config-modal").then((module) => module.AppConfigModal);
+
+const AppConfigModal = dynamic(loadAppConfigModal, {
+    ssr: false,
+    loading: () => null,
+});
+
 export function AppTopNav() {
     const pathname = usePathname();
     const router = useRouter();
@@ -25,6 +32,8 @@ export function AppTopNav() {
     const [site, setSite] = useState<PublicSiteSettings>({ title: "VOZEB", logoUrl: "/logo.svg" });
     const setUser = useUserStore((state) => state.setUser);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
+    const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
     const slug = pathname.split("/").filter(Boolean)[0];
     const activeToolSlug = navigationTools.some((tool) => tool.slug === slug) ? (slug as NavigationToolSlug) : undefined;
@@ -40,6 +49,13 @@ export function AppTopNav() {
             })
             .catch(() => undefined);
     }, [setUser, updateConfig]);
+
+    useEffect(() => {
+        if (isConfigOpen || shouldPromptContinue) return;
+        return preloadOnIdle(() => {
+            void loadAppConfigModal();
+        });
+    }, [isConfigOpen, shouldPromptContinue]);
 
     return (
         <>
@@ -91,9 +107,20 @@ export function AppTopNav() {
             ) : null}
 
             <MobileNavDrawer open={mobileNavOpen} activeToolSlug={activeToolSlug} onClose={() => setMobileNavOpen(false)} />
-            <AppConfigModal />
+            {isConfigOpen || shouldPromptContinue ? <AppConfigModal /> : null}
         </>
     );
+}
+
+function preloadOnIdle(task: () => void) {
+    const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+        cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(task, { timeout: 2500 });
+    if (idleId !== undefined) return () => idleWindow.cancelIdleCallback?.(idleId);
+    const timer = window.setTimeout(task, 1200);
+    return () => window.clearTimeout(timer);
 }
 
 function SiteLogo({ logoUrl, className }: { logoUrl: string; className: string }) {

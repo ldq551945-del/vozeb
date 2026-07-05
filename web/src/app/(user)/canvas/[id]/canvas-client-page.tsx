@@ -43,7 +43,7 @@ import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
 import { CanvasToolbar } from "../components/canvas-toolbar";
-import { AssetPickerModal, type InsertAssetPayload } from "../components/asset-picker-modal";
+import type { InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { useCanvasAgentStore } from "../stores/use-canvas-agent-store";
 import { useCanvasStore } from "../stores/use-canvas-store";
@@ -67,6 +67,8 @@ import {
 
 const CanvasAssistantPanel = dynamic(() => import("../components/canvas-assistant-panel").then((mod) => mod.CanvasAssistantPanel), { ssr: false });
 const CanvasLocalAgentPanel = dynamic(() => import("../components/canvas-local-agent-panel").then((mod) => mod.CanvasLocalAgentPanel), { ssr: false });
+const loadAssetPickerModal = () => import("../components/asset-picker-modal").then((mod) => mod.AssetPickerModal);
+const AssetPickerModal = dynamic(loadAssetPickerModal, { ssr: false, loading: () => null });
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio } from "@/types/media";
 
@@ -247,6 +249,13 @@ function VozebCanvasPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const projectId = params.id;
+
+    useEffect(() => {
+        return preloadOnIdle(() => {
+            void loadAssetPickerModal();
+        });
+    }, []);
+
     const localAgentConnected = useCanvasAgentStore((state) => state.connected);
     const localAgentActivity = useCanvasAgentStore((state) => state.activity);
     const localAgentEnabled = useCanvasAgentStore((state) => state.enabled);
@@ -3096,7 +3105,7 @@ function VozebCanvasPage() {
                     <p className="text-sm opacity-60">这会删除当前画布上的所有节点和连线。</p>
                 </Modal>
 
-                <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
+                {assetPickerOpen ? <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} /> : null}
                 {codexCompactAgent && !assistantMounted ? <CanvasLocalAgentPanel headless snapshot={agentSnapshot} canUndoOps={Boolean(agentUndoSnapshot)} onApplyOps={applyAgentOps} onUndoOps={undoAgentOps} autoConnect={codexAutoConnect} /> : null}
             </section>
             {assistantMounted ? (
@@ -3565,6 +3574,17 @@ function isHiddenBatchConnectionEndpoint(node: CanvasNodeData, nodes: CanvasNode
     if (!rootId) return false;
     const root = nodes.find((item) => item.id === rootId);
     return Boolean(root && !root.metadata?.imageBatchExpanded);
+}
+
+function preloadOnIdle(task: () => void) {
+    const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+        cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(task, { timeout: 2500 });
+    if (idleId !== undefined) return () => idleWindow.cancelIdleCallback?.(idleId);
+    const timer = window.setTimeout(task, 1200);
+    return () => window.clearTimeout(timer);
 }
 
 function buildAngleLabel(params: CanvasImageAngleParams) {

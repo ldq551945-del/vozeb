@@ -63,7 +63,10 @@ const defaultSite: {
     footerCopyright: "© 2026 VOZEB. All rights reserved.",
     termsUrl: "/terms",
     privacyUrl: "/privacy",
-    friendLinks: [{ id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true }],
+    friendLinks: [
+        { id: "vozeb-home", label: "VOZEB", url: "https://www.vozeb.com/", enabled: true },
+        { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
+    ],
     socials: {
         email: { enabled: true, label: "邮箱联系", url: "mailto:contact@example.com" },
         telegram: { enabled: true, label: "Telegram", url: "https://t.me/vozeb" },
@@ -80,14 +83,17 @@ const socialIconByKey: Record<SiteSocialKey, ReactNode> = {
 };
 
 function Highlighter({ action, color, children }: { action: "highlight" | "underline"; color: string; children: ReactNode }) {
+    if (action === "highlight") {
+        return (
+            <span className="box-decoration-clone rounded-sm px-1 font-medium text-stone-800 dark:text-stone-200" style={{ backgroundColor: `${color}70` }}>
+                {children}
+            </span>
+        );
+    }
+
     return (
-        <span className="relative inline-block px-1">
-            {action === "highlight" ? (
-                <span className="absolute inset-x-0 bottom-0 top-1 rounded-sm opacity-45" style={{ backgroundColor: color }} />
-            ) : (
-                <span className="absolute inset-x-0 bottom-0 h-1 rounded-full opacity-80" style={{ backgroundColor: color }} />
-            )}
-            <span className="relative font-medium text-stone-800 dark:text-stone-200">{children}</span>
+        <span className="box-decoration-clone border-b-[3px] px-1 font-medium text-stone-800 dark:text-stone-200" style={{ borderColor: color }}>
+            {children}
         </span>
     );
 }
@@ -212,7 +218,7 @@ export default function HomePage() {
                             </Link>
                         ))}
                     </nav>
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="landing-header-actions flex items-center justify-end gap-2">
                         <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="landing-theme-toggle" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
                         <Button className="landing-login-button" onClick={() => (user ? router.push("/canvas") : setAuthOpen(true))}>
                             {user ? "进入工作台" : "登录"}
@@ -228,7 +234,7 @@ export default function HomePage() {
                             <h1 className="ai-title-aurora max-w-6xl text-balance text-7xl font-semibold tracking-normal sm:text-8xl lg:text-[9rem] xl:text-[11rem]">{site.title || "VOZEB"}</h1>
                             <span className="hero-version-badge inline-flex items-center gap-2 rounded-lg border border-cyan-300/45 bg-white/82 px-3.5 py-2 text-sm font-semibold text-stone-700 shadow-sm shadow-cyan-950/5 dark:border-cyan-200/20 dark:bg-cyan-200/8 dark:text-cyan-100">
                                 <Sparkles className="size-4" />
-                                v0.8.6 创作入口
+                                v0.8.7 创作入口
                             </span>
                             <HeroCape />
                         </div>
@@ -345,26 +351,32 @@ export default function HomePage() {
 
             <footer className="landing-footer relative z-10 mx-auto max-w-[1200px] px-6 pb-10">
                 <div className="landing-footer-shell">
-                    <div className="landing-footer-brand flex min-w-0 items-center gap-4">
+                    <div className="landing-footer-brand min-w-0">
                         <SiteLogo logoUrl={site.logoUrl} className="landing-footer-logo bg-stone-950 dark:bg-white" />
-                        <div className="min-w-0">
-                            <div className="truncate text-base font-semibold text-stone-950 dark:text-white">{site.title || "VOZEB"}</div>
-                            <div className="mt-1 text-sm text-stone-500 dark:text-stone-400">{site.footerCopyright}</div>
+                        <div className="landing-footer-brand-copy min-w-0">
+                            <div className="landing-footer-title truncate text-base font-semibold text-stone-950 dark:text-white">{site.title || "VOZEB"}</div>
+                            <div className="landing-footer-copyright mt-1 text-sm text-stone-500 dark:text-stone-400">{site.footerCopyright}</div>
                         </div>
                     </div>
                     <div className="landing-footer-actions">
                         <div className="landing-footer-links">
-                            <Link href={site.termsUrl || "/terms"} className="landing-footer-link">
-                                使用条款
-                            </Link>
-                            <Link href={site.privacyUrl || "/privacy"} className="landing-footer-link">
-                                隐私政策
-                            </Link>
-                            {friendLinks.map((link) => (
-                                <Link key={link.id} href={link.url} className="landing-footer-link" target={link.url.startsWith("/") ? undefined : "_blank"} rel={link.url.startsWith("/") ? undefined : "noreferrer"}>
-                                    {link.label}
+                            <div className="landing-footer-link-row landing-footer-policy-links">
+                                <Link href={site.termsUrl || "/terms"} className="landing-footer-link">
+                                    使用条款
                                 </Link>
-                            ))}
+                                <Link href={site.privacyUrl || "/privacy"} className="landing-footer-link">
+                                    隐私政策
+                                </Link>
+                            </div>
+                            {friendLinks.length ? (
+                                <div className="landing-footer-link-row landing-footer-friend-links">
+                                    {friendLinks.map((link) => (
+                                        <Link key={link.id} href={link.url} className="landing-footer-link" target={link.url.startsWith("/") ? undefined : "_blank"} rel={link.url.startsWith("/") ? undefined : "noreferrer"}>
+                                            {link.label}
+                                        </Link>
+                                    ))}
+                                </div>
+                            ) : null}
                         </div>
                         <div className="landing-footer-socials">
                             {Object.entries(site.socials)

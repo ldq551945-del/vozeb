@@ -483,59 +483,6 @@
         box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
     }
 
-    .result-select-checkbox .ant-checkbox-inner {
-        background: rgba(255, 255, 255, 0.92);
-        border-color: rgba(15, 23, 42, 0.38);
-        border-radius: 5px;
-        box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
-        height: 20px;
-        width: 20px;
-    }
-
-    .result-select-checkbox .ant-checkbox:hover .ant-checkbox-inner,
-    .result-select-checkbox:hover .ant-checkbox-inner {
-        border-color: rgba(15, 23, 42, 0.62);
-    }
-
-    .result-select-checkbox .ant-checkbox-checked .ant-checkbox-inner {
-        background: rgba(17, 24, 39, 0.92);
-        border-color: rgba(17, 24, 39, 0.92);
-    }
-
-    .result-select-checkbox .ant-checkbox-checked .ant-checkbox-inner::after {
-        border-color: #ffffff;
-    }
-
-    .dark .result-select-checkbox .ant-checkbox-inner {
-        background: rgba(3, 7, 18, 0.68);
-        border-color: rgba(255, 255, 255, 0.48);
-        box-shadow: 0 1px 5px rgba(0, 0, 0, 0.42);
-    }
-
-    .dark .result-select-checkbox .ant-checkbox:hover .ant-checkbox-inner,
-    .dark .result-select-checkbox:hover .ant-checkbox-inner {
-        border-color: rgba(255, 255, 255, 0.72);
-    }
-
-    html.dark .result-select-checkbox.ant-checkbox-wrapper .ant-checkbox-checked .ant-checkbox-inner,
-    html.dark .result-select-checkbox .ant-checkbox-checked .ant-checkbox-inner {
-        background: #ffffff !important;
-        border-color: #ffffff !important;
-        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.46);
-    }
-
-    html.dark .result-select-checkbox.ant-checkbox-wrapper .ant-checkbox-checked .ant-checkbox-inner::after,
-    html.dark .result-select-checkbox .ant-checkbox-checked .ant-checkbox-inner::after {
-        border-color: #111827 !important;
-        border-width: 0 2px 2px 0 !important;
-        height: 10px !important;
-        inset-block-start: 45% !important;
-        inset-inline-start: 25% !important;
-        opacity: 1 !important;
-        transform: rotate(45deg) scale(1) translate(-50%, -50%) !important;
-        width: 6px !important;
-    }
-
     .landing-login-button.ant-btn {
         border-color: rgba(15, 23, 42, 0.12);
         color: #111827;
@@ -677,6 +624,10 @@
     .landing-theme-toggle svg {
         height: 17px;
         width: 17px;
+    }
+
+    .landing-header-actions {
+        min-width: 0;
     }
 
     .landing-feature-panel,
@@ -1016,10 +967,13 @@
         .landing-site-header > div {
             display: flex;
             grid-template-columns: 1fr auto;
+            gap: 10px;
             justify-content: space-between;
             height: 68px;
             max-width: 100%;
+            overflow: hidden;
             padding-inline: 16px;
+            position: relative;
         }
 
         .app-shell-header > div {
@@ -1047,17 +1001,27 @@
         }
 
         .user-points-popover .ant-popover-inner {
-            width: min(14rem, calc(100vw - 44px));
+            width: min(13rem, calc(100vw - 44px));
         }
 
         .landing-site-header > div > a {
             flex: 1 1 auto;
+            max-width: calc(100vw - 152px);
             min-width: 0;
         }
 
         .landing-site-header > div > div:last-child {
             flex: 0 0 auto;
             min-width: max-content;
+        }
+
+        .landing-header-actions {
+            flex: 0 0 auto;
+            max-width: calc(100vw - 150px);
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
         }
 
         .landing-site-header {
@@ -1306,8 +1270,8 @@
 
     @media (max-width: 430px) {
         .landing-site-header > div {
-            gap: 10px;
-            padding-inline: 12px;
+            gap: 8px;
+            padding-inline: 10px;
         }
 
         .app-shell-header > div {
@@ -1340,7 +1304,10 @@
         }
 
         .landing-site-header .landing-login-button.ant-btn {
-            padding-inline: 10px;
+            height: 34px;
+            max-width: 86px;
+            overflow: hidden;
+            padding-inline: 9px;
         }
 
         .landing-site-header a {
@@ -1348,7 +1315,26 @@
         }
 
         .landing-site-header a span:not([style]) {
-            max-width: 34vw;
+            max-width: 30vw;
+        }
+
+        .landing-theme-toggle {
+            height: 34px;
+            width: 34px;
+        }
+
+        .landing-header-actions {
+            gap: 6px;
+            max-width: calc(100vw - 132px);
+            right: 10px;
+        }
+    }
+
+    @media (max-width: 760px) {
+        .landing-feature-panel p,
+        .landing-showcase-shell p,
+        .landing-stat-pill {
+            overflow-wrap: anywhere;
         }
     }
 
@@ -1527,6 +1513,21 @@
         width: 44px;
     }
 
+    .landing-footer-brand,
+    .landing-footer-actions {
+        min-width: 0;
+    }
+
+    .landing-footer-brand {
+        align-items: center;
+        display: flex;
+        gap: 16px;
+    }
+
+    .landing-footer-brand-copy {
+        min-width: 0;
+    }
+
     .landing-footer-actions,
     .landing-footer-links,
     .landing-footer-socials {
@@ -1538,14 +1539,32 @@
     .landing-footer-actions {
         gap: 18px;
         justify-content: flex-end;
+        max-width: min(100%, 760px);
     }
 
     .landing-footer-links {
+        flex-direction: row;
         gap: 6px;
+        justify-content: flex-end;
+        min-width: 0;
+    }
+
+    .landing-footer-link-row {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+
+    .landing-footer-policy-links,
+    .landing-footer-friend-links {
+        min-width: 0;
     }
 
     .landing-footer-socials {
         gap: 10px;
+        justify-content: flex-end;
     }
 
     .landing-footer-link {
@@ -1556,6 +1575,7 @@
         font-weight: 600;
         min-height: 38px;
         padding: 8px 14px;
+        white-space: nowrap;
         transition:
             background 0.18s ease,
             color 0.18s ease;
@@ -1615,6 +1635,162 @@
     .dark .landing-footer-social:hover {
         background: rgba(125, 211, 252, 0.1);
         color: #ffffff;
+    }
+
+    @media (max-width: 760px) {
+        .landing-footer {
+            margin-top: 8px;
+            padding-bottom: 24px;
+            padding-inline: 14px;
+        }
+
+        .landing-footer-shell {
+            align-items: center;
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            gap: 11px;
+            margin-inline: auto;
+            min-height: 0;
+            padding: 16px;
+            text-align: left;
+            width: min(100%, 480px);
+        }
+
+        .landing-footer-brand {
+            display: contents;
+        }
+
+        .landing-footer-logo {
+            flex: 0 0 auto;
+            grid-column: 1;
+            grid-row: 1;
+            height: 36px;
+            width: 36px;
+        }
+
+        .landing-footer-brand-copy {
+            display: contents;
+        }
+
+        .landing-footer-title {
+            align-self: center;
+            font-size: 18px;
+            grid-column: 2;
+            grid-row: 1;
+            line-height: 1.2;
+            min-width: 0;
+        }
+
+        .landing-footer-copyright {
+            font-size: 13px;
+            grid-column: 1 / -1;
+            grid-row: 2;
+            line-height: 1.35;
+            margin-top: 0;
+            overflow-wrap: anywhere;
+            width: 100%;
+        }
+
+        .landing-footer-actions {
+            display: contents;
+        }
+
+        .landing-footer-links {
+            align-items: flex-start;
+            display: grid;
+            gap: 7px;
+            grid-column: 1 / -1;
+            grid-row: 3;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            justify-content: stretch;
+            justify-items: start;
+            width: 100%;
+        }
+
+        .landing-footer-policy-links,
+        .landing-footer-friend-links {
+            justify-content: flex-start;
+            width: 100%;
+        }
+
+        .landing-footer-policy-links {
+            grid-column: 1;
+            gap: 8px;
+        }
+
+        .landing-footer-friend-links {
+            grid-column: 2;
+            gap: 6px;
+            justify-content: flex-end;
+            justify-self: end;
+        }
+
+        .landing-footer-link {
+            font-size: 14px;
+            line-height: 1;
+            min-height: 34px;
+            padding: 8px 11px;
+        }
+
+        .landing-footer-policy-links .landing-footer-link {
+            background: rgba(15, 23, 42, 0.05);
+        }
+
+        .dark .landing-footer-policy-links .landing-footer-link {
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        .landing-footer-socials {
+            align-self: center;
+            gap: 6px;
+            grid-column: 3;
+            grid-row: 1;
+            justify-content: flex-end;
+            justify-self: end;
+            width: auto;
+        }
+
+        .landing-footer-social {
+            height: 38px;
+            width: 38px;
+        }
+
+        .landing-footer-social svg {
+            height: 19px;
+            width: 19px;
+        }
+    }
+
+    @media (max-width: 430px) {
+        .landing-footer-shell {
+            border-radius: 16px;
+            gap: 10px;
+            padding: 15px;
+        }
+
+        .landing-footer-links {
+            gap: 7px 8px;
+        }
+
+        .landing-footer-logo {
+            height: 34px;
+            width: 34px;
+        }
+
+        .landing-footer-title {
+            font-size: 17px;
+        }
+
+        .landing-footer-link {
+            font-size: 13px;
+            min-height: 32px;
+            padding-inline: 9px;
+        }
+
+        .landing-footer-social {
+            height: 36px;
+            width: 36px;
+        }
     }
 
     .landing-auth-shell {
@@ -2558,11 +2734,11 @@ html.dark .canvas-agent-confirm-switch.ant-switch.ant-switch-checked:hover:not(.
     }
 
     .user-points-popover .ant-popover-inner {
-        width: min(14rem, calc(100vw - 44px));
+        width: min(13rem, calc(100vw - 44px));
     }
 
     .user-points-panel {
-        width: min(14rem, calc(100vw - 48px)) !important;
+        width: min(13rem, calc(100vw - 48px)) !important;
     }
 
     .canvas-zoom-controls {
@@ -2704,11 +2880,11 @@ html.dark .canvas-agent-confirm-switch.ant-switch.ant-switch-checked:hover:not(.
     }
 
     .user-points-popover .ant-popover-inner {
-        width: min(13.25rem, calc(100vw - 40px));
+        width: min(12.5rem, calc(100vw - 40px));
     }
 
     .user-points-panel {
-        width: min(13.25rem, calc(100vw - 44px)) !important;
+        width: min(12.5rem, calc(100vw - 44px)) !important;
     }
 }
 

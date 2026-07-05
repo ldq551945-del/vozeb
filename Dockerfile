@@ -35,12 +35,14 @@ ENV NODE_OPTIONS=--max-old-space-size=384
 ENV UV_THREADPOOL_SIZE=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /app/web/scripts
 
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=web-build /app/web/public /app/web/public
 COPY --from=web-build /app/web/.next/standalone /app/web
 COPY --from=web-build /app/web/.next/static /app/web/.next/static
+COPY web/scripts/reset-admin-password.mjs /app/web/scripts/reset-admin-password.mjs
 
 EXPOSE 3000
 CMD ["sh", "-c", "cd /app/web && PORT=3000 node server.js"]

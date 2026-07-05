@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Keyboard, LogOut, Settings2, ShieldCheck, UserCircle } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
@@ -10,7 +11,6 @@ import { App, Dropdown, Popover, Spin, Tag } from "antd";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
-import { VersionReleaseModal } from "@/components/layout/version-release-modal";
 import { CreditSymbol } from "@/constant/credits";
 import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -38,6 +38,9 @@ type PointRecord = {
     description: string;
     createdAt: string;
 };
+
+const loadVersionReleaseModal = () => import("@/components/layout/version-release-modal").then((module) => module.VersionReleaseModal);
+const VersionReleaseModal = dynamic(loadVersionReleaseModal, { ssr: false, loading: () => null });
 
 export function UserStatusActions({ showConfig = true, variant = "default", onOpenShortcuts }: UserStatusActionsProps) {
     const router = useRouter();
@@ -117,6 +120,13 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
             router.prefetch("/profile");
         }
     }, [router, user]);
+
+    useEffect(() => {
+        if (!showAdminMetaActions) return;
+        return preloadOnIdle(() => {
+            void loadVersionReleaseModal();
+        });
+    }, [showAdminMetaActions]);
 
     const handleMenuClick: MenuProps["onClick"] = async ({ key }) => {
         if (key !== "logout") return;
@@ -324,4 +334,15 @@ function splitPointRecordDescription(description: string) {
     if (!action) return { model: text, action: "" };
     const model = text.slice(0, -action.length).trim();
     return { model: model || "模型", action };
+}
+
+function preloadOnIdle(task: () => void) {
+    const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+        cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = idleWindow.requestIdleCallback?.(task, { timeout: 2500 });
+    if (idleId !== undefined) return () => idleWindow.cancelIdleCallback?.(idleId);
+    const timer = window.setTimeout(task, 1200);
+    return () => window.clearTimeout(timer);
 }
