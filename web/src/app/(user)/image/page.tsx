@@ -126,6 +126,7 @@ export default function ImagePage() {
     const activeLogIdRef = useRef<string | null>(null);
     const taskControllersRef = useRef(new Map<string, AbortController>());
     const logWriteQueuesRef = useRef(new Map<string, Promise<unknown>>());
+    const deletedLogIdsRef = useRef(new Set<string>());
     const deletedResultIdsRef = useRef(new Set<string>());
     const activeImageTasksRef = useRef(0);
     const imageTaskQueueRef = useRef<Array<() => void>>([]);
@@ -201,14 +202,15 @@ export default function ImagePage() {
     };
 
     function replaceLogs(nextLogs: GenerationLog[]) {
-        logsRef.current = nextLogs;
-        setLogs(nextLogs);
+        const visibleLogs = nextLogs.filter((log) => !deletedLogIdsRef.current.has(log.id));
+        logsRef.current = visibleLogs;
+        setLogs(visibleLogs);
         const activeLogId = activeLogIdRef.current;
         if (activeLogId) {
-            const nextActiveLog = nextLogs.find((log) => log.id === activeLogId);
+            const nextActiveLog = visibleLogs.find((log) => log.id === activeLogId);
             if (nextActiveLog) setPreviewLog(nextActiveLog);
         }
-        resumePendingLogs(nextLogs);
+        resumePendingLogs(visibleLogs);
     }
 
     function upsertLog(log: GenerationLog) {
@@ -471,11 +473,20 @@ export default function ImagePage() {
         activeLogIdRef.current = null;
     };
 
-    const deleteSelectedLogs = () => {
-        const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), deleteServerGenerationLogs(selectedLogIds.flatMap(imageServerLogIds)), ...selectedLogIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]).then(refreshLogs);
-        selectedLogIds.forEach((id) => resultsByLogIdRef.current.delete(id));
-        if (previewLog && selectedLogIds.includes(previewLog.id)) {
+    const deleteSelectedLogs = async () => {
+        const deleteIds = selectedLogIds.filter((id) => logsRef.current.some((log) => log.id === id));
+        if (!deleteIds.length) {
+            setDeleteConfirmOpen(false);
+            return;
+        }
+        const deleteIdSet = new Set(deleteIds);
+        const imageKeys = logsRef.current.filter((log) => deleteIdSet.has(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
+        deleteIds.forEach((id) => {
+            deletedLogIdsRef.current.add(id);
+            resultsByLogIdRef.current.delete(id);
+        });
+        replaceLogs(logsRef.current.filter((log) => !deleteIdSet.has(log.id)));
+        if (previewLog && deleteIdSet.has(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
             setSelectedResultIds([]);
@@ -483,6 +494,15 @@ export default function ImagePage() {
         }
         setSelectedLogIds([]);
         setDeleteConfirmOpen(false);
+        const serverIds = deleteIds.flatMap(imageServerLogIds);
+        const results = await Promise.allSettled([deleteStoredImages(imageKeys), deleteServerGenerationLogs(serverIds), ...deleteIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]);
+        const failed = results.filter((result) => result.status === "rejected");
+        if (failed.length) {
+            message.warning("记录已从本地列表移除，部分远程或本地缓存删除失败，请稍后刷新重试");
+        } else {
+            message.success(`已删除 ${deleteIds.length} 条生成记录`);
+        }
+        await refreshLogs();
     };
 
     const refreshLogs = async () => replaceLogs(await readStoredLogs());

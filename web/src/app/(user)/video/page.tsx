@@ -413,20 +413,27 @@ export default function VideoPage() {
         activeLogIdRef.current = null;
     };
 
-    const deleteSelectedLogs = () => {
+    const deleteSelectedLogs = async () => {
+        const deleteIds = selectedLogIds.filter((id) => logsRef.current.some((log) => log.id === id));
+        if (!deleteIds.length) {
+            setDeleteConfirmOpen(false);
+            return;
+        }
+        const deleteIdSet = new Set(deleteIds);
         const mediaKeys = logs
-            .filter((log) => selectedLogIds.includes(log.id))
+            .filter((log) => deleteIdSet.has(log.id))
             .map((log) => log.video?.storageKey)
             .filter((key): key is string => Boolean(key));
-        selectedLogIds.forEach((id) => {
+        deleteIds.forEach((id) => {
             deletedResultLogIdsRef.current.add(id);
             removeQueuedVideoLog(id);
             activeLogIdsRef.current.delete(id);
         });
         syncActiveVideoCount();
         startQueuedVideoLogs();
-        void Promise.all([deleteStoredMedia(mediaKeys), deleteServerGenerationLogs(selectedLogIds.map((id) => `video-workbench:${id}`)), ...selectedLogIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]).then(refreshLogs);
-        if (previewLog && selectedLogIds.includes(previewLog.id)) {
+        logsRef.current = logsRef.current.filter((log) => !deleteIdSet.has(log.id));
+        setLogs(logsRef.current);
+        if (previewLog && deleteIdSet.has(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
             setSelectedResultIds([]);
@@ -434,6 +441,14 @@ export default function VideoPage() {
         }
         setSelectedLogIds([]);
         setDeleteConfirmOpen(false);
+        const results = await Promise.allSettled([deleteStoredMedia(mediaKeys), deleteServerGenerationLogs(deleteIds.map((id) => `video-workbench:${id}`)), ...deleteIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]);
+        const failed = results.filter((result) => result.status === "rejected");
+        if (failed.length) {
+            message.warning("记录已从本地列表移除，部分远程或本地缓存删除失败，请稍后刷新重试");
+        } else {
+            message.success(`已删除 ${deleteIds.length} 条生成记录`);
+        }
+        await refreshLogs();
     };
 
     const saveLog = async (log: GenerationLog, options?: { refresh?: boolean }) => {
@@ -447,12 +462,13 @@ export default function VideoPage() {
 
     const refreshLogs = async () => {
         const nextLogs = await readStoredLogs();
-        logsRef.current = nextLogs;
-        setLogs(nextLogs);
-        const activeLog = activeLogIdRef.current ? nextLogs.find((log) => log.id === activeLogIdRef.current) : null;
+        const visibleLogs = nextLogs.filter((log) => !deletedResultLogIdsRef.current.has(log.id));
+        logsRef.current = visibleLogs;
+        setLogs(visibleLogs);
+        const activeLog = activeLogIdRef.current ? visibleLogs.find((log) => log.id === activeLogIdRef.current) : null;
         if (activeLog) setPreviewLog(activeLog);
-        resumePendingLogs(nextLogs);
-        return nextLogs;
+        resumePendingLogs(visibleLogs);
+        return visibleLogs;
     };
 
     const getLatestLog = (logId: string) => logsRef.current.find((log) => log.id === logId) || null;

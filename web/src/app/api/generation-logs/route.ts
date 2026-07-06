@@ -64,10 +64,22 @@ export async function DELETE(request: Request) {
 
     const userLogs = await listGenerationLogs({ userId: currentUser.id, pageSize: 100 });
     const allowedIds = new Set(userLogs.items.map((log) => log.id));
-    const deletableIds = requestedIds.filter((id) => allowedIds.has(id));
+    const requestedIdSet = new Set(requestedIds.filter((id) => allowedIds.has(id)));
+    const requestedAssetUrls = new Set(
+        userLogs.items
+            .filter((log) => requestedIdSet.has(log.id))
+            .flatMap((log) => log.assets.map(stableAssetUrl).filter(Boolean)),
+    );
+    const deletableIds = userLogs.items
+        .filter((log) => requestedIdSet.has(log.id) || log.assets.some((asset) => requestedAssetUrls.has(stableAssetUrl(asset))))
+        .map((log) => log.id);
     if (!deletableIds.length) return NextResponse.json({ deleted: 0 });
 
     return NextResponse.json(await deleteGenerationLogs(deletableIds));
+}
+
+function stableAssetUrl(asset: GenerationLogAsset) {
+    return asset.remoteUrl || asset.serverUrl || asset.url || "";
 }
 
 function exposeAssetForUser(asset: GenerationLogAsset, settings: Awaited<ReturnType<typeof getAuthSettings>>["generationAssetStorage"]) {
