@@ -34,7 +34,7 @@ import {
 import dayjs from "dayjs";
 import { nanoid } from "nanoid";
 
-import { DEFAULT_MODEL_POINT_COST_KEY } from "@/constant/credits";
+import { DEFAULT_MODEL_POINT_COST_KEY, formatCreditAmount } from "@/constant/credits";
 import type { AuthSettings, PublicUser, SiteFriendLink, SiteShowcaseItem, SiteSocialKey, SystemModelChannel, UserRole, UserStatus } from "@/lib/auth/store";
 import type { GenerationAssetStats, StoredGenerationLog } from "@/lib/server/generation-log-store";
 import type { Prompt } from "@/services/api/prompts";
@@ -65,11 +65,43 @@ type UserEditorValue = {
     pointsBalance: number;
 };
 
+type ChannelHealthKind = "text" | "image" | "video";
+
+type ChannelHealthResult = {
+    ok: boolean;
+    kind: ChannelHealthKind;
+    model: string;
+    status: number;
+    pointsCost?: number;
+    pointsRemaining?: number;
+    taskId?: string;
+    remoteUrl?: string;
+    error?: string;
+};
+
 type AdminSectionKey = "overview" | "site" | "settings" | "users" | "logs" | "prompts";
 
 const PROMPT_PAGE_SIZE = 20;
 const PROMPT_SEARCH_DEBOUNCE_MS = 300;
 const GENERATION_LOG_PAGE_SIZE = 20;
+const imageQualityMultiplierOptions = [
+    { key: "auto", label: "自动" },
+    { key: "low", label: "低清" },
+    { key: "medium", label: "中等" },
+    { key: "high", label: "高清" },
+];
+const videoQualityMultiplierOptions = [
+    { key: "480", label: "480p" },
+    { key: "720", label: "720p" },
+    { key: "1080", label: "1080p" },
+];
+const videoSecondsMultiplierOptions = [
+    { key: "-1", label: "智能" },
+    { key: "5", label: "5s" },
+    { key: "10", label: "10s" },
+];
+const suggestedVideoSecondOptions = [6, 8, 20];
+const legacyDefaultVideoSecondKeys = new Set(["12", "16"]);
 
 const siteSocialItems: Array<{ key: SiteSocialKey; label: string; placeholder: string; icon: ReactNode }> = [
     { key: "email", label: "邮箱联系", placeholder: "mailto:contact@example.com", icon: <Mail className="size-4" /> },
@@ -101,6 +133,8 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
     const [mailTestLoading, setMailTestLoading] = useState(false);
     const [mailTestTo, setMailTestTo] = useState("");
     const [fetchingModelId, setFetchingModelId] = useState("");
+    const [testingChannelKey, setTestingChannelKey] = useState("");
+    const [channelHealthResults, setChannelHealthResults] = useState<Record<string, ChannelHealthResult>>({});
     const [promptSaving, setPromptSaving] = useState(false);
     const [promptsLoading, setPromptsLoading] = useState(false);
     const [deletingPromptId, setDeletingPromptId] = useState("");
@@ -597,6 +631,33 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         setSettings((current) => ({ ...current, modelPointCosts: { ...current.modelPointCosts, [model]: toNumberOrOne(value) } }));
     };
 
+    const updateGenerationPointMultiplier = (group: keyof AuthSettings["generationPointMultipliers"], key: string, value: number | null) => {
+        setSettings((current) => ({
+            ...current,
+            generationPointMultipliers: {
+                ...current.generationPointMultipliers,
+                [group]: {
+                    ...current.generationPointMultipliers[group],
+                    [key]: toNumberOrOne(value),
+                },
+            },
+        }));
+    };
+
+    const deleteGenerationPointMultiplier = (group: keyof AuthSettings["generationPointMultipliers"], key: string) => {
+        setSettings((current) => {
+            const nextGroup = { ...current.generationPointMultipliers[group] };
+            delete nextGroup[key];
+            return {
+                ...current,
+                generationPointMultipliers: {
+                    ...current.generationPointMultipliers,
+                    [group]: nextGroup,
+                },
+            };
+        });
+    };
+
     const addCustomPointModel = () => {
         const model = customPointModel.trim();
         if (!model) {
@@ -770,7 +831,10 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         }
         setFetchingModelId("all");
         try {
-            const entries = await Promise.all(runnable.map(async (channel) => [channel.id, await requestAdminModels(channel)] as const));
+            const entries: Array<readonly [string, string[]]> = [];
+            for (const channel of runnable) {
+                entries.push([channel.id, await requestAdminModels(channel)] as const);
+            }
             const modelMap = new Map(entries);
             setSettings((current) => ({
                 ...current,
@@ -781,6 +845,41 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             message.error(error instanceof Error ? error.message : "拉取模型失败");
         } finally {
             setFetchingModelId("");
+        }
+    };
+
+    const testChannelHealth = async (channel: SystemModelChannel, kind: ChannelHealthKind) => {
+        if (!channel.baseUrl.trim() || !channel.apiKey.trim()) {
+            message.error("请先填写该渠道的 Base URL 和 API Key");
+            return;
+        }
+        const model = selectChannelHealthModel(channel, settings.defaultModels, kind);
+        if (!model) {
+            message.error("请先为该渠道填写至少一个模型名");
+            return;
+        }
+        const resultKey = `${channel.id}:${kind}`;
+        setTestingChannelKey(resultKey);
+        try {
+            const response = await fetch("/api/admin/channel-health", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, model, kind }),
+            });
+            const payload = (await response.json()) as { result?: ChannelHealthResult; error?: string };
+            if (!response.ok || !payload.result) throw new Error(payload.error || "接口测试失败");
+            setChannelHealthResults((current) => ({ ...current, [resultKey]: payload.result! }));
+            if (payload.result.ok) message.success(`${channel.name || "渠道"} ${healthKindLabel(kind)}测试成功`);
+            else message.warning(payload.result.error || `${healthKindLabel(kind)}测试失败`);
+        } catch (error) {
+            const messageText = error instanceof Error ? error.message : "接口测试失败";
+            setChannelHealthResults((current) => ({
+                ...current,
+                [resultKey]: { ok: false, kind, model, status: 0, error: messageText },
+            }));
+            message.error(messageText);
+        } finally {
+            setTestingChannelKey("");
         }
     };
 
@@ -851,7 +950,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             title: "积分余额",
             dataIndex: "pointsBalance",
             width: 140,
-            render: (pointsBalance: number) => <Tag className="m-0">{Number(pointsBalance || 0).toLocaleString()} 积分</Tag>,
+            render: (pointsBalance: number) => <Tag className="m-0">{formatCreditAmount(pointsBalance)} 积分</Tag>,
         },
         {
             title: "操作",
@@ -861,7 +960,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                     <Button size="small" icon={<SlidersHorizontal className="size-3.5" />} loading={updatingUserId === record.id} onClick={() => openUserEditor(record)}>
                         管理
                     </Button>
-                    <Popconfirm title="删除该用户？" description="会同时清理该用户会话、签到和额度记录。" okText="删除" cancelText="取消" onConfirm={() => void deleteUser(record.id)}>
+                    <Popconfirm title="删除该用户？" description="会同时清理该用户会话、签到、额度记录、生成日志和服务器副本。" okText="删除" cancelText="取消" onConfirm={() => void deleteUser(record.id)}>
                         <Button size="small" danger disabled={record.id === currentUser.id} loading={updatingUserId === record.id} icon={<Trash2 className="size-3.5" />} />
                     </Popconfirm>
                 </Space>
@@ -1323,6 +1422,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                                     defaultPoints: settings.defaultPoints,
                                                     checkInRewardPoints: settings.checkInRewardPoints,
                                                     modelPointCosts: settings.modelPointCosts,
+                                                    generationPointMultipliers: settings.generationPointMultipliers,
                                                     generationConcurrency: settings.generationConcurrency,
                                                     generationAssetStorage: settings.generationAssetStorage,
                                                 },
@@ -1405,18 +1505,20 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                 <div className="space-y-4">
                                     <GenerationConcurrencyPanel settings={settings} onChange={updateGenerationConcurrency} />
                                     <GenerationAssetStoragePanel settings={settings} onChange={updateGenerationAssetStorage} />
-                                    <QuotaRuleTable
-                                        settings={settings}
-                                        customModel={customPointModel}
-                                        onCustomModelChange={setCustomPointModel}
-                                        onAddCustomModel={addCustomPointModel}
-                                        onDefaultPointsChange={updateDefaultPoints}
-                                        onCheckInRewardPointsChange={updateCheckInRewardPoints}
-                                        onModelPointCostChange={updateModelPointCost}
-                                        onModelPointCostDelete={deleteModelPointCost}
-                                    />
                                 </div>
                             </div>
+                            <QuotaRuleTable
+                                settings={settings}
+                                customModel={customPointModel}
+                                onCustomModelChange={setCustomPointModel}
+                                onAddCustomModel={addCustomPointModel}
+                                onDefaultPointsChange={updateDefaultPoints}
+                                onCheckInRewardPointsChange={updateCheckInRewardPoints}
+                                onModelPointCostChange={updateModelPointCost}
+                                onModelPointCostDelete={deleteModelPointCost}
+                                onGenerationPointMultiplierChange={updateGenerationPointMultiplier}
+                                onGenerationPointMultiplierDelete={deleteGenerationPointMultiplier}
+                            />
                             <div className="flex flex-col gap-3 rounded-lg border border-stone-200 bg-stone-50/70 p-3 xl:flex-row xl:items-center xl:justify-between dark:border-stone-800 dark:bg-stone-900/40">
                                 <SettingInlineToggle
                                     title="允许用户自配接口"
@@ -1449,9 +1551,12 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                             key={channel.id}
                                             channel={channel}
                                             fetching={fetchingModelId === channel.id}
+                                            testingKey={testingChannelKey}
+                                            healthResults={channelHealthResults}
                                             onChange={(patch) => updateChannel(channel.id, patch)}
                                             onDelete={() => deleteChannel(channel.id)}
                                             onFetchModels={() => void fetchModelsForChannel(channel)}
+                                            onTestHealth={(kind) => void testChannelHealth(channel, kind)}
                                         />
                                     ))}
                                     {!settings.systemChannels.length ? (
@@ -1891,7 +1996,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                     </div>
                     <div className="mb-3 text-sm font-semibold text-stone-950 dark:text-stone-100">积分余额</div>
                     <Form.Item label="当前积分" name="pointsBalance" rules={[{ required: true, message: "请输入积分余额" }]}>
-                        <InputNumber className="w-full" min={0} precision={0} />
+                        <InputNumber className="w-full" min={0} precision={2} />
                     </Form.Item>
                 </Form>
             </Modal>
@@ -2035,20 +2140,24 @@ function GenerationLogResultSection({ log, settings }: { log: StoredGenerationLo
                     {assets.length} 个结果
                 </Tag>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-3">
                 {assets.map((asset, index) => {
                     const assetUrl = generationLogAssetAccessUrl(asset, settings);
                     return (
-                        <div key={`${asset.url}-${index}`} className="min-w-0 rounded-lg border border-stone-200 bg-stone-50 p-3 dark:border-stone-800 dark:bg-stone-900/60">
-                            <div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
-                                <span>{asset.type === "video" ? `视频 ${index + 1}` : `图片 ${index + 1}`}</span>
-                                {asset.width || asset.height ? <span>{[asset.width, asset.height].filter(Boolean).join("x")}</span> : null}
+                        <div key={`${asset.url}-${index}`} className="grid min-w-0 items-start gap-3 rounded-lg border border-stone-200 bg-white p-3 dark:border-stone-800 dark:bg-stone-950/60 sm:grid-cols-[156px_minmax(0,1fr)]">
+                            <div className="min-w-0">
+                                <div className="mb-2 flex items-center justify-between gap-2 text-xs font-medium text-stone-500 dark:text-stone-400">
+                                    <span>{asset.type === "video" ? `视频 ${index + 1}` : `图片 ${index + 1}`}</span>
+                                    {asset.width || asset.height ? <span className="shrink-0 tabular-nums">{[asset.width, asset.height].filter(Boolean).join("x")}</span> : null}
+                                </div>
+                                <div className="flex h-32 items-center justify-center overflow-hidden rounded-md bg-stone-100 p-2 dark:bg-stone-900 sm:h-36">
+                                    {asset.type === "video" ? (
+                                        <video className="h-full w-full rounded bg-black object-contain" src={assetUrl} controls playsInline preload="metadata" />
+                                    ) : (
+                                        <img className="h-full w-full object-contain" src={assetUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />
+                                    )}
+                                </div>
                             </div>
-                            {asset.type === "video" ? (
-                                <video className="max-h-[300px] w-full rounded-md bg-black object-contain" src={assetUrl} controls playsInline preload="metadata" />
-                            ) : (
-                                <img className="max-h-[300px] w-full rounded-md bg-white object-contain dark:bg-stone-950" src={assetUrl} alt="" referrerPolicy="no-referrer" loading="lazy" />
-                            )}
                             <GenerationAssetAddressList asset={asset} assetUrl={assetUrl} />
                         </div>
                     );
@@ -2067,28 +2176,56 @@ function GenerationAssetAddressList({ asset, assetUrl }: { asset: StoredGenerati
 
     if (!rows.length) return null;
     return (
-        <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 p-3 dark:border-stone-800 dark:bg-stone-900/70">
+        <div className="min-w-0 self-start">
             <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">访问地址</div>
+                <div className="text-xs font-semibold text-stone-500 dark:text-stone-400">访问地址</div>
                 <Tag className="m-0" color={asset.type === "video" ? "purple" : "blue"}>
                     {asset.type === "video" ? "视频" : "图片"}
                 </Tag>
             </div>
-            <div className="space-y-2">
-                {rows.map((row) => (
-                    <div key={row.key} className="flex min-w-0 flex-col gap-2 rounded-md border border-stone-200 bg-white px-3 py-2 dark:border-stone-800 dark:bg-stone-950/70 sm:flex-row sm:items-center">
-                        <div className="shrink-0 text-xs font-medium text-stone-700 dark:text-stone-200">{row.label}</div>
-                        <div className="min-w-0 flex-1 truncate text-xs text-stone-500 dark:text-stone-400" title={row.url}>
-                            {row.url}
+            <div className="overflow-hidden rounded-md border border-stone-200 dark:border-stone-800">
+                {rows.map((row) => {
+                    const displayUrl = generationLogAssetDisplayUrl(row.url);
+                    return (
+                        <div key={row.key} className="grid min-w-0 gap-2 border-b border-stone-200 bg-stone-50/70 px-3 py-2 last:border-b-0 dark:border-stone-800 dark:bg-stone-900/50 sm:grid-cols-[96px_minmax(0,1fr)_auto] sm:items-center">
+                            <div className="text-xs font-medium text-stone-700 dark:text-stone-200">{row.label}</div>
+                            <div className="min-w-0 truncate font-mono text-[11px] leading-5 text-stone-500 dark:text-stone-400" title={displayUrl}>
+                                {displayUrl}
+                            </div>
+                            <Button className="justify-self-start sm:justify-self-end" size="small" href={row.url} target="_blank" icon={<ExternalLink className="size-3.5" />}>
+                                打开
+                            </Button>
                         </div>
-                        <Button size="small" href={row.url} target="_blank" icon={<ExternalLink className="size-3.5" />}>
-                            打开
-                        </Button>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
         </div>
     );
+}
+
+function generationLogAssetDisplayUrl(url: string) {
+    const value = (url || "").trim();
+    if (!value) return value;
+    const decodedProxyUrl = decodeMediaProxyDisplayUrl(value);
+    if (decodedProxyUrl) return decodedProxyUrl;
+    try {
+        return decodeURI(value);
+    } catch {
+        return value;
+    }
+}
+
+function decodeMediaProxyDisplayUrl(value: string) {
+    try {
+        const baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+        const parsed = new URL(value, baseUrl);
+        const isMediaProxy = parsed.pathname === "/api/media-proxy" || /^\/api\/ai\/system\/[^/]+\/_media$/.test(parsed.pathname);
+        const targetUrl = parsed.searchParams.get("url");
+        if (!isMediaProxy || !targetUrl) return "";
+        return `${parsed.pathname}?url=${targetUrl}`;
+    } catch {
+        return "";
+    }
 }
 
 function generationLogAssetAddressLabel(asset: StoredGenerationLog["assets"][number], url: string) {
@@ -2257,6 +2394,8 @@ function QuotaRuleTable({
     onCheckInRewardPointsChange,
     onModelPointCostChange,
     onModelPointCostDelete,
+    onGenerationPointMultiplierChange,
+    onGenerationPointMultiplierDelete,
 }: {
     settings: AuthSettings;
     customModel: string;
@@ -2266,6 +2405,8 @@ function QuotaRuleTable({
     onCheckInRewardPointsChange: (value: number | null) => void;
     onModelPointCostChange: (model: string, value: number | null) => void;
     onModelPointCostDelete: (model: string) => void;
+    onGenerationPointMultiplierChange: (group: keyof AuthSettings["generationPointMultipliers"], key: string, value: number | null) => void;
+    onGenerationPointMultiplierDelete: (group: keyof AuthSettings["generationPointMultipliers"], key: string) => void;
 }) {
     const channelModels = uniqueList(settings.systemChannels.flatMap((channel) => channel.models));
     const models = uniqueList([...channelModels, ...Object.keys(settings.modelPointCosts || {}).filter((model) => model !== DEFAULT_MODEL_POINT_COST_KEY)]);
@@ -2314,11 +2455,133 @@ function QuotaRuleTable({
                     )}
                 </div>
             </div>
+            <div className="mt-4 rounded-md border border-stone-200 bg-white p-3 dark:border-stone-800 dark:bg-stone-950/70">
+                <div className="text-sm font-semibold text-stone-950 dark:text-stone-100">生成参数倍率</div>
+                <div className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">最终扣费 = 模型消耗 × 图片张数/视频任务 × 对应参数倍率。未命中的自定义参数按 1 倍计算。</div>
+                <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(220px,0.8fr)_minmax(220px,0.8fr)_minmax(360px,1.4fr)]">
+                    <MultiplierGroup title="图片清晰度" values={imageQualityMultiplierOptions} group="imageQuality" settings={settings.generationPointMultipliers.imageQuality} onChange={onGenerationPointMultiplierChange} />
+                    <MultiplierGroup title="视频清晰度" values={videoQualityMultiplierOptions} group="videoQuality" settings={settings.generationPointMultipliers.videoQuality} onChange={onGenerationPointMultiplierChange} />
+                    <VideoSecondsMultiplierGroup settings={settings.generationPointMultipliers.videoSeconds} onChange={onGenerationPointMultiplierChange} onDelete={onGenerationPointMultiplierDelete} />
+                </div>
+            </div>
         </div>
     );
 }
 
-function SystemChannelEditor({ channel, fetching, onChange, onDelete, onFetchModels }: { channel: SystemModelChannel; fetching: boolean; onChange: (patch: Partial<SystemModelChannel>) => void; onDelete: () => void; onFetchModels: () => void }) {
+function MultiplierGroup({
+    title,
+    values,
+    group,
+    settings,
+    onChange,
+}: {
+    title: string;
+    values: Array<{ key: string; label: string }>;
+    group: keyof AuthSettings["generationPointMultipliers"];
+    settings: Record<string, number>;
+    onChange: (group: keyof AuthSettings["generationPointMultipliers"], key: string, value: number | null) => void;
+}) {
+    return (
+        <div className="min-w-0 rounded-md border border-stone-200 bg-stone-50/70 p-3 dark:border-stone-800 dark:bg-stone-900/50">
+            <div className="mb-3 text-xs font-semibold text-stone-600 dark:text-stone-300">{title}</div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(104px,1fr))]">
+                {values.map((item) => (
+                    <div key={item.key} className="min-w-0 rounded-md border border-stone-200 bg-white px-2 py-2 dark:border-stone-800 dark:bg-stone-950/70">
+                        <div className="mb-1 truncate text-xs font-medium text-stone-600 dark:text-stone-300">{item.label}</div>
+                        <InputNumber className="w-full" size="small" min={0} precision={2} value={settings[item.key] ?? 1} onChange={(value) => onChange(group, item.key, toNumberOrOne(value))} />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function VideoSecondsMultiplierGroup({
+    settings,
+    onChange,
+    onDelete,
+}: {
+    settings: Record<string, number>;
+    onChange: (group: keyof AuthSettings["generationPointMultipliers"], key: string, value: number | null) => void;
+    onDelete: (group: keyof AuthSettings["generationPointMultipliers"], key: string) => void;
+}) {
+    const [customSeconds, setCustomSeconds] = useState<number | null>(null);
+    const standardKeys = new Set(videoSecondsMultiplierOptions.map((item) => item.key));
+    const customRows = Object.keys(settings || {})
+        .filter((key) => !standardKeys.has(key))
+        .filter((key) => !legacyDefaultVideoSecondKeys.has(key) || settings[key] !== 1)
+        .filter((key) => {
+            const value = Number(key);
+            return Number.isFinite(value) && Number.isInteger(value) && value > 0;
+        })
+        .sort((a, b) => Number(a) - Number(b))
+        .map((key) => ({ key, label: `${key}s` }));
+    const addCustomSeconds = () => {
+        const seconds = Math.floor(Number(customSeconds));
+        if (!Number.isFinite(seconds) || seconds <= 0) return;
+        onChange("videoSeconds", String(seconds), settings[String(seconds)] ?? 1);
+        setCustomSeconds(null);
+    };
+
+    return (
+        <div className="min-w-0 rounded-md border border-stone-200 bg-stone-50/70 p-3 dark:border-stone-800 dark:bg-stone-900/50">
+            <div className="mb-3 text-xs font-semibold text-stone-600 dark:text-stone-300">视频秒数</div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(96px,1fr))]">
+                {videoSecondsMultiplierOptions.map((item) => (
+                    <VideoSecondMultiplierCell key={item.key} label={item.label} value={settings[item.key] ?? 1} onChange={(value) => onChange("videoSeconds", item.key, value)} />
+                ))}
+                {customRows.map((item) => (
+                    <VideoSecondMultiplierCell key={item.key} label={item.label} value={settings[item.key] ?? 1} onChange={(value) => onChange("videoSeconds", item.key, value)} onDelete={() => onDelete("videoSeconds", item.key)} />
+                ))}
+                <div className="col-span-full flex flex-wrap gap-1.5">
+                    {suggestedVideoSecondOptions.map((seconds) => (
+                        <Button key={seconds} size="small" onClick={() => onChange("videoSeconds", String(seconds), settings[String(seconds)] ?? 1)}>
+                            {seconds}s
+                        </Button>
+                    ))}
+                </div>
+                <div className="col-span-full mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <InputNumber className="w-full" min={1} max={20} precision={0} placeholder="自定义秒数" value={customSeconds} onChange={setCustomSeconds} />
+                    <Button size="small" icon={<Plus className="size-3.5" />} onClick={addCustomSeconds}>
+                        添加
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function VideoSecondMultiplierCell({ label, value, onChange, onDelete }: { label: string; value: number; onChange: (value: number | null) => void; onDelete?: () => void }) {
+    return (
+        <div className="relative min-w-0 rounded-md border border-stone-200 bg-white px-2 py-2 dark:border-stone-800 dark:bg-stone-950/70">
+            <div className="mb-1 truncate pr-6 text-xs font-medium text-stone-600 dark:text-stone-300">{label}</div>
+            {onDelete ? <Button className="!absolute right-1 top-1 !h-5 !w-5 !min-w-5 !p-0" size="small" danger icon={<Trash2 className="size-3" />} aria-label="删除自定义秒数" title="删除自定义秒数" onClick={onDelete} /> : null}
+            <InputNumber className="w-full" size="small" min={0} precision={2} value={value} onChange={(nextValue) => onChange(toNumberOrOne(nextValue))} />
+        </div>
+    );
+}
+
+function SystemChannelEditor({
+    channel,
+    fetching,
+    testingKey,
+    healthResults,
+    onChange,
+    onDelete,
+    onFetchModels,
+    onTestHealth,
+}: {
+    channel: SystemModelChannel;
+    fetching: boolean;
+    testingKey: string;
+    healthResults: Record<string, ChannelHealthResult>;
+    onChange: (patch: Partial<SystemModelChannel>) => void;
+    onDelete: () => void;
+    onFetchModels: () => void;
+    onTestHealth: (kind: ChannelHealthKind) => void;
+}) {
+    const healthKinds: ChannelHealthKind[] = ["text", "image", "video"];
+    const visibleHealthResults = healthKinds.map((kind) => healthResults[`${channel.id}:${kind}`]).filter((item): item is ChannelHealthResult => Boolean(item));
     return (
         <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm shadow-stone-200/40 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2334,11 +2597,17 @@ function SystemChannelEditor({ channel, fetching, onChange, onDelete, onFetchMod
                         <Tag className="m-0">{channel.models.length} 个模型</Tag>
                     </div>
                     <div className="mt-1 truncate text-xs text-stone-500 dark:text-stone-400">{channel.baseUrl || "未填写 Base URL"}</div>
+                    <div className="mt-1 text-xs text-stone-400 dark:text-stone-500">拉取模型有 30 秒冷却；健康检测只测当前单个模型，避免连续探测。</div>
                 </div>
                 <Space wrap className="w-full justify-start sm:w-auto sm:justify-end">
                     <Button size="small" icon={<RefreshCw className="size-3.5" />} loading={fetching} onClick={onFetchModels}>
                         拉取模型
                     </Button>
+                    {healthKinds.map((kind) => (
+                        <Button key={kind} size="small" loading={testingKey === `${channel.id}:${kind}`} onClick={() => onTestHealth(kind)}>
+                            测{healthKindLabel(kind)}
+                        </Button>
+                    ))}
                     <Switch checkedChildren="启用" unCheckedChildren="停用" checked={channel.enabled} onChange={(enabled) => onChange({ enabled })} />
                     <Popconfirm title="删除这个接口渠道？" okText="删除" cancelText="取消" onConfirm={onDelete}>
                         <Button size="small" danger icon={<Trash2 className="size-3.5" />} aria-label="删除渠道" title="删除渠道" />
@@ -2361,6 +2630,29 @@ function SystemChannelEditor({ channel, fetching, onChange, onDelete, onFetchMod
                     </LabeledControl>
                 </div>
             </div>
+            {visibleHealthResults.length ? (
+                <div className="mt-3 space-y-2 border-t border-stone-100 pt-3 dark:border-stone-800">
+                    {visibleHealthResults.map((result) => (
+                        <ChannelHealthResultRow key={`${result.kind}:${result.model}`} result={result} />
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function ChannelHealthResultRow({ result }: { result: ChannelHealthResult }) {
+    const detail = result.remoteUrl || result.taskId || result.error || "创建成功";
+    return (
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
+            <Tag color={result.ok ? "green" : "red"} className="m-0">
+                {healthKindLabel(result.kind)}
+                {result.ok ? "成功" : "失败"}
+            </Tag>
+            <span className="truncate">模型：{result.model}</span>
+            <span>状态：{result.status || "-"}</span>
+            <span>扣费：{typeof result.pointsCost === "number" ? formatCreditAmount(result.pointsCost) : "-"}</span>
+            <span className="min-w-0 flex-1 truncate">{result.remoteUrl ? "远程地址：" : result.taskId ? "任务：" : result.error ? "原因：" : ""}{detail}</span>
         </div>
     );
 }
@@ -2533,6 +2825,30 @@ async function requestAdminModels(channel: SystemModelChannel) {
     return payload.models;
 }
 
+function selectChannelHealthModel(channel: SystemModelChannel, defaults: AuthSettings["defaultModels"], kind: ChannelHealthKind) {
+    const defaultValue = kind === "image" ? defaults.imageModel : kind === "video" ? defaults.videoModel : defaults.textModel;
+    const normalizedDefault = modelNameFromOption(defaultValue || "");
+    if (normalizedDefault && (!channel.models.length || channel.models.includes(normalizedDefault))) return normalizedDefault;
+    const matcher =
+        kind === "image"
+            ? /image|img|gpt-image|dall|flux|sd|midjourney/i
+            : kind === "video"
+              ? /video|vid|i2v|t2v|seedance|kling|sora|veo|grok-imagine/i
+              : /gpt|chat|claude|deepseek|qwen|grok|text/i;
+    return channel.models.find((model) => matcher.test(model)) || channel.models[0] || normalizedDefault;
+}
+
+function modelNameFromOption(value: string) {
+    const normalized = value.trim();
+    if (!normalized) return "";
+    const parts = normalized.split("::");
+    return parts[parts.length - 1] || normalized;
+}
+
+function healthKindLabel(kind: ChannelHealthKind) {
+    return kind === "image" ? "图片" : kind === "video" ? "视频" : "文本";
+}
+
 function splitTags(value?: string) {
     return (value || "")
         .split(/[,，\n]/)
@@ -2545,8 +2861,8 @@ function uniqueList(values: string[]) {
 }
 
 function toNumberOrZero(value: unknown) {
-    const numberValue = Math.floor(Number(value));
-    return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) && numberValue >= 0 ? Number(numberValue.toFixed(2)) : 0;
 }
 
 function toNumberOrOne(value: unknown) {

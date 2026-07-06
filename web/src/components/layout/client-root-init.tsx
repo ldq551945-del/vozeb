@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { App } from "antd";
 
-import { createModelChannel, normalizeGenerationConcurrency, useConfigStore, type GenerationConcurrencySettings } from "@/stores/use-config-store";
+import { createModelChannel, normalizeGenerationConcurrency, normalizeGenerationPointMultipliers, useConfigStore, type GenerationConcurrencySettings, type GenerationPointMultipliers } from "@/stores/use-config-store";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
@@ -15,9 +15,10 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         void fetch("/api/auth/session", { cache: "no-store" })
-            .then((response) => response.json() as Promise<{ settings?: { modelPointCosts?: Record<string, number>; generationConcurrency?: GenerationConcurrencySettings } }>)
+            .then((response) => response.json() as Promise<{ settings?: { modelPointCosts?: Record<string, number>; generationPointMultipliers?: GenerationPointMultipliers; generationConcurrency?: GenerationConcurrencySettings } }>)
             .then((payload) => {
                 updateConfig("modelPointCosts", payload.settings?.modelPointCosts || {});
+                if (payload.settings?.generationPointMultipliers) updateConfig("generationPointMultipliers", normalizeGenerationPointMultipliers(payload.settings.generationPointMultipliers));
                 if (payload.settings?.generationConcurrency) updateConfig("generationConcurrency", normalizeGenerationConcurrency(payload.settings.generationConcurrency));
             })
             .catch(() => undefined);

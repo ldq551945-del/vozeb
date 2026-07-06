@@ -31,6 +31,9 @@ const VIDEO_URL_KEYS = ["video_url", "videoUrl", "output_url", "outputUrl", "dow
 const VIDEO_CONTAINER_KEYS = ["data", "result", "results", "content", "output", "video", "videos", "media", "file", "files", "artifact", "artifacts", "items", "task", "job"];
 const TASK_ID_KEYS = ["task_id", "taskId", "id", "job_id", "jobId", "request_id", "requestId", "generation_id", "generationId"];
 const TASK_STATUS_KEYS = ["status", "state", "task_status", "taskStatus"];
+const VIDEO_CREATE_ERROR_PREFIX = "视频任务创建失败：";
+const VIDEO_QUERY_ERROR_PREFIX = "视频任务查询失败：";
+const VIDEO_STAGE_ERROR_PREFIX = "上游生成阶段失败：";
 
 function aiApiUrl(config: AiConfig, path: string) {
     return buildApiUrl(config.baseUrl, path);
@@ -104,7 +107,10 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     body.append("resolution_name", normalizeVideoResolution(config.vquality));
     body.append("preset", "normal");
     const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    files.forEach((file) => body.append("input_reference[]", file));
+    files.forEach((file) => {
+        body.append("input_reference[]", file);
+        body.append("input_reference", file);
+    });
     try {
         const response = await axios.post<ApiVideoResponse>(aiApiUrl(config, "/videos"), body, { headers: aiHeaders(config), signal: options?.signal });
         syncUserPointsFromHeaders(response.headers, config.apiSource);
@@ -116,7 +122,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         const errorMessage = readAxiosError(error, "视频任务创建失败");
         if (shouldFallbackToCompatibleVideo(error, errorMessage)) return createCompatibleVideoTask(config, model, prompt, references, options);
         await refreshUserPointsIfSystem(config.apiSource);
-        throw new Error(errorMessage);
+        throw new Error(videoCreationError(errorMessage));
     }
 }
 
@@ -124,40 +130,43 @@ async function pollOpenAIVideoTask(config: AiConfig, task: VideoGenerationTask, 
     try {
         const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(config, `/videos/${task.id}`), { headers: aiHeaders(config), signal: options?.signal })).data);
         if (video.status === "completed") {
-            const content = await axios.get<Blob>(aiApiUrl(config, `/videos/${task.id}/content`), { headers: aiHeaders(config), responseType: "blob", signal: options?.signal });
+            const contentUrl = aiApiUrl(config, `/videos/${task.id}/content`);
+            const content = await axios.get<Blob>(contentUrl, { headers: aiHeaders(config), responseType: "blob", signal: options?.signal });
             await assertVideoBlob(content.data);
-            return { status: "completed", result: { blob: content.data } };
+            return { status: "completed", result: { blob: content.data, remoteUrl: contentUrl } };
         }
-        if (video.status === "failed" || video.status === "cancelled") return { status: "failed", error: video.error?.message || "视频生成失败" };
+        if (video.status === "failed" || video.status === "cancelled") return { status: "failed", error: videoStageError(video.error?.message || "视频生成失败") };
         return { status: "pending" };
     } catch (error) {
-        throw new Error(readAxiosError(error, "视频任务查询失败"));
+        throw new Error(videoQueryError(readAxiosError(error, "视频任务查询失败")));
     }
 }
 
 async function createCompatibleVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    const payload = await buildCompatibleVideoPayload(config, model, prompt, references);
+    const payloads = await buildCompatibleVideoPayloadVariants(config, model, prompt, references);
     let lastError = "";
     for (const path of VIDEO_CREATE_PATHS) {
-        try {
-            const response = await axios.post<ApiEnvelope<Record<string, unknown>>>(aiApiUrl(config, path), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
-            syncUserPointsFromHeaders(response.headers, config.apiSource);
-            const created = unwrapEnvelope(response.data, "视频接口没有返回任务") as Record<string, unknown>;
-            const id = readTaskId(created);
-            if (!id) throw new Error("视频接口没有返回任务 ID");
-            await refreshUserPointsIfSystem(config.apiSource);
-            return { id, provider: "generation", model, pollPath: path };
-        } catch (error) {
-            const message = readAxiosError(error, "视频任务创建失败");
-            lastError = message;
-            if (!shouldFallbackToCompatibleVideo(error, message)) {
+        for (const payload of payloads) {
+            try {
+                const response = await axios.post<ApiEnvelope<Record<string, unknown>>>(aiApiUrl(config, path), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
+                syncUserPointsFromHeaders(response.headers, config.apiSource);
+                const created = unwrapEnvelope(response.data, "视频接口没有返回任务") as Record<string, unknown>;
+                const id = readTaskId(created);
+                if (!id) throw new Error("视频接口没有返回任务 ID");
                 await refreshUserPointsIfSystem(config.apiSource);
-                throw new Error(message);
+                return { id, provider: "generation", model, pollPath: path };
+            } catch (error) {
+                const message = readAxiosError(error, "视频任务创建失败");
+                lastError = message;
+                if (shouldFallbackToCompatibleVideo(error, message)) break;
+                if (shouldRetryCompatibleVideoPayload(error, message)) continue;
+                await refreshUserPointsIfSystem(config.apiSource);
+                throw new Error(videoCreationError(message));
             }
         }
     }
     await refreshUserPointsIfSystem(config.apiSource);
-    throw new Error(lastError || "视频任务创建失败");
+    throw new Error(videoCreationError(lastError || "视频任务创建失败"));
 }
 
 async function pollCompatibleVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
@@ -174,16 +183,16 @@ async function pollCompatibleVideoTask(config: AiConfig, task: VideoGenerationTa
                 const resolvedUrl = resolveVideoMediaUrl(config, videoUrl, readHeader(response.headers, "x-vozeb-upstream-url") || requestUrl);
                 return { status: "completed", result: await videoResultFromUrl(resolvedUrl, options) };
             }
-            if (isCompletedStatus(status)) return { status: "failed", error: "视频任务完成但没有返回视频地址" };
-            if (isFailedStatus(status)) return { status: "failed", error: readTaskError(state) || "视频生成失败" };
+            if (isCompletedStatus(status)) return { status: "failed", error: videoStageError("视频任务完成但没有返回视频地址") };
+            if (isFailedStatus(status)) return { status: "failed", error: videoStageError(readTaskError(state) || "视频生成失败") };
             return { status: "pending" };
         } catch (error) {
             const message = readAxiosError(error, "视频任务查询失败");
             lastError = message;
-            if (!shouldFallbackToCompatibleVideo(error, message)) throw new Error(message);
+            if (!shouldFallbackToCompatibleVideo(error, message)) throw new Error(videoQueryError(message));
         }
     }
-    throw new Error(lastError || "视频任务查询失败");
+    throw new Error(videoQueryError(lastError || "视频任务查询失败"));
 }
 
 async function createSeedanceTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
@@ -213,7 +222,7 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
         return { id: created.id, provider: "seedance", model };
     } catch (error) {
         await refreshUserPointsIfSystem(config.apiSource);
-        throw new Error(readAxiosError(error, "Seedance 任务创建失败"));
+        throw new Error(videoCreationError(readAxiosError(error, "Seedance 任务创建失败")));
     }
 }
 
@@ -224,13 +233,13 @@ async function pollSeedanceTask(config: AiConfig, task: VideoGenerationTask, opt
         const state = unwrapSeedanceTask(response.data);
         if (state.status === "succeeded") {
             const url = state.content?.video_url ? resolveVideoMediaUrl(config, state.content.video_url, readHeader(response.headers, "x-vozeb-upstream-url") || requestUrl) : "";
-            if (!url) return { status: "failed", error: "Seedance 任务成功但没有返回视频 URL" };
+            if (!url) return { status: "failed", error: videoStageError("Seedance 任务成功但没有返回视频 URL") };
             return { status: "completed", result: await videoResultFromUrl(url, options) };
         }
-        if (state.status === "failed" || state.status === "cancelled" || state.status === "expired") return { status: "failed", error: state.error?.message || `Seedance 视频生成${state.status === "expired" ? "超时" : "失败"}` };
+        if (state.status === "failed" || state.status === "cancelled" || state.status === "expired") return { status: "failed", error: videoStageError(state.error?.message || `Seedance 视频生成${state.status === "expired" ? "超时" : "失败"}`) };
         return { status: "pending" };
     } catch (error) {
-        throw new Error(readAxiosError(error, "Seedance 任务查询失败"));
+        throw new Error(videoQueryError(readAxiosError(error, "Seedance 任务查询失败")));
     }
 }
 
@@ -260,16 +269,22 @@ function seedanceApiUrl(config: AiConfig, taskId?: string) {
     return buildApiUrl(config.baseUrl, `/contents/generations/tasks${taskId ? `/${encodeURIComponent(taskId)}` : ""}`);
 }
 
-async function buildCompatibleVideoPayload(config: AiConfig, model: string, prompt: string, references: ReferenceImage[]) {
+async function buildCompatibleVideoPayloadVariants(config: AiConfig, model: string, prompt: string, references: ReferenceImage[]) {
     const images = await Promise.all(references.slice(0, 9).map((image) => imageToDataUrl(image)));
     const duration = normalizeCompatibleVideoDuration(config.videoSeconds);
     const ratio = normalizeCompatibleVideoRatio(config.size);
     const quality = normalizeCompatibleVideoQuality(config.vquality);
-    return {
+    const size = normalizeVideoSize(config.size) || "1280x720";
+    const dimensions = normalizeCompatibleVideoDimensions(config.size);
+    const mediaPayloads = buildCompatibleVideoMediaPayloads(images);
+    const base = {
         model: modelOptionName(model),
         prompt,
-        seconds: duration,
-        duration,
+        n: 1,
+        size,
+        width: dimensions.width,
+        height: dimensions.height,
+        response_format: "url",
         ratio,
         aspect_ratio: ratio,
         resolution: normalizeVideoResolution(config.vquality),
@@ -277,10 +292,24 @@ async function buildCompatibleVideoPayload(config: AiConfig, model: string, prom
         async: true,
         generate_audio: boolConfig(config.videoGenerateAudio, true),
         watermark: boolConfig(config.videoWatermark, false),
-        ...(images.length === 1 ? { image: images[0] } : {}),
-        ...(images.length ? { images } : {}),
-        ...(images.length ? { ref_assets: images } : {}),
     };
+    return mediaPayloads.flatMap((mediaPayload) => [
+        { ...base, ...mediaPayload, seconds: String(duration) },
+        { ...base, ...mediaPayload, duration },
+        { ...base, ...mediaPayload, seconds: String(duration), duration },
+    ]);
+}
+
+function buildCompatibleVideoMediaPayloads(images: string[]) {
+    if (!images.length) return [{}];
+    const imageObjects = images.map((url) => ({ url }));
+    return [
+        { input_image: imageObjects[0] },
+        { image_url: imageObjects[0] },
+        { image: images[0] },
+        { image: images[0], images, ref_assets: images },
+        { image: imageObjects[0], images: imageObjects, ref_assets: imageObjects },
+    ];
 }
 
 function normalizeCompatibleVideoDuration(value: string) {
@@ -301,12 +330,25 @@ function normalizeCompatibleVideoQuality(value: string) {
     return resolution === "1080p" ? "hd" : "standard";
 }
 
+function normalizeCompatibleVideoDimensions(value: string) {
+    const size = normalizeVideoSize(value) || "1280x720";
+    const [width, height] = size.split("x").map((item) => Number(item));
+    return { width: Number.isFinite(width) ? width : 1280, height: Number.isFinite(height) ? height : 720 };
+}
+
 function shouldFallbackToCompatibleVideo(error: unknown, message: string) {
     if (axios.isCancel(error)) return false;
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
     if (status === 404 || status === 405 || status === 415) return true;
-    if (status && status >= 500 && /not found|route|endpoint|unsupported|no such|cannot post|invalid url/i.test(message)) return true;
-    return /not found|route|endpoint|unsupported|no such|cannot post|invalid url|404/i.test(message);
+    if (status && status >= 500 && /not found|not implemented|route|endpoint|unsupported|no such|cannot post|invalid url/i.test(message)) return true;
+    return /not found|not implemented|route|endpoint|unsupported|no such|cannot post|invalid url|404/i.test(message);
+}
+
+function shouldRetryCompatibleVideoPayload(error: unknown, message: string) {
+    if (axios.isCancel(error)) return false;
+    const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+    if (status !== 400 && status !== 422) return false;
+    return /duration|seconds|duplicate field|unmarshal|invalid type|resolution|quality|size|field|image|images|input_image|ref_assets/i.test(message);
 }
 
 function readTaskId(record: Record<string, unknown>) {
@@ -465,7 +507,7 @@ function assertVideoConfig(config: AiConfig, model: string) {
 }
 
 function normalizeVideoSeconds(value: string) {
-    const seconds = Math.floor(Number(value) || 6);
+    const seconds = Math.floor(Number(value) || 5);
     return String(Math.max(1, Math.min(20, seconds)));
 }
 
@@ -503,12 +545,30 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
 
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: { message?: string }; message?: string; msg?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.error?.message || statusMessage(error.response?.status, fallback);
+        return responseData?.msg || responseData?.message || responseData?.error?.message || statusMessage(error.response?.status, fallback);
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;
+}
+
+function videoCreationError(message: string) {
+    return prefixedVideoError(message, VIDEO_CREATE_ERROR_PREFIX);
+}
+
+function videoQueryError(message: string) {
+    return prefixedVideoError(message, VIDEO_QUERY_ERROR_PREFIX);
+}
+
+function videoStageError(message: string) {
+    return prefixedVideoError(message, VIDEO_STAGE_ERROR_PREFIX);
+}
+
+function prefixedVideoError(message: string, prefix: string) {
+    const cleanMessage = (message || "").trim() || prefix.replace(/：$/, "");
+    if (cleanMessage.startsWith(prefix) || cleanMessage.startsWith(prefix.replace(/：$/, ""))) return cleanMessage;
+    return `${prefix}${cleanMessage}`;
 }
 
 function statusMessage(status: number | undefined, fallback: string) {

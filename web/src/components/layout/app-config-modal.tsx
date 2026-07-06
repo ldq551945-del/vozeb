@@ -16,10 +16,12 @@ import {
     modelOptionLabel,
     modelOptionsFromChannels,
     normalizeGenerationConcurrency,
+    normalizeGenerationPointMultipliers,
     normalizeModelOptionValue,
     useConfigStore,
     type AiConfig,
     type GenerationConcurrencySettings,
+    type GenerationPointMultipliers,
     type ModelCapability,
     type ModelChannel,
 } from "@/stores/use-config-store";
@@ -43,6 +45,7 @@ type WebdavDomainProgress = {
 type PublicSystemSettings = {
     allowUserApiConfig: boolean;
     modelPointCosts: Record<string, number>;
+    generationPointMultipliers: GenerationPointMultipliers;
     generationConcurrency: GenerationConcurrencySettings;
     defaultModels: {
         imageModel: string;
@@ -108,6 +111,7 @@ export function AppConfigModal() {
             .then((payload: { settings?: PublicSystemSettings }) => {
                 setSystemSettings(payload.settings || null);
                 updateConfig("modelPointCosts", payload.settings?.modelPointCosts || {});
+                if (payload.settings?.generationPointMultipliers) updateConfig("generationPointMultipliers", normalizeGenerationPointMultipliers(payload.settings.generationPointMultipliers));
                 if (payload.settings?.generationConcurrency) updateConfig("generationConcurrency", normalizeGenerationConcurrency(payload.settings.generationConcurrency));
             })
             .catch(() => setSystemSettings(null));

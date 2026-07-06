@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { consumeUserPoints, getAuthSettings, isQuotaExceededError, refundUserPoints, type ApiCallFormat, type PointUsageKind } from "@/lib/auth/store";
+import { consumeUserPoints, getAuthSettings, isQuotaExceededError, refundUserPoints, type ApiCallFormat, type GenerationPointMultipliers, type PointUsageKind } from "@/lib/auth/store";
 import { getCurrentUser } from "@/lib/auth/session";
 import { DEFAULT_CHANNEL_CONNECT_ERROR } from "@/lib/server/generation-errors";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
@@ -60,7 +60,7 @@ async function proxySystemRequest(request: Request, context: RouteContext) {
     else headers.set("authorization", `Bearer ${channel.apiKey}`);
 
     const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
-    const pointsRequest = classifyPointsRequest(request.method, channel.apiFormat, path, contentType, body);
+    const pointsRequest = classifyPointsRequest(request.method, channel.apiFormat, path, contentType, body, settings.generationPointMultipliers);
     let pointsResult: Awaited<ReturnType<typeof consumeUserPoints>> | null = null;
     let refundedPointsRemaining: number | null = null;
     let pointsSettled = false;
@@ -194,7 +194,7 @@ function isBlockedProxyHost(hostname: string) {
     return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || a === 0;
 }
 
-function classifyPointsRequest(method: string, apiFormat: ApiCallFormat, path: string[], contentType: string | null, body?: ArrayBuffer): PointsRequest | null {
+function classifyPointsRequest(method: string, apiFormat: ApiCallFormat, path: string[], contentType: string | null, body?: ArrayBuffer, multipliers?: GenerationPointMultipliers): PointsRequest | null {
     if (method.toUpperCase() !== "POST") return null;
     const cleanPath = path[0] === "v1" || path[0] === "v1beta" ? path.slice(1) : path;
     const routePath = `/${cleanPath.join("/")}`.toLowerCase();
@@ -203,11 +203,14 @@ function classifyPointsRequest(method: string, apiFormat: ApiCallFormat, path: s
     if (!model) return null;
 
     if (routePath === "/images/generations" || routePath === "/images/edits") {
-        return { model, amount: readRequestCount(payload), usageKind: "image" };
+        return { model, amount: readRequestCount(payload) * imageQualityMultiplier(payload, multipliers), usageKind: "image" };
     }
     if (routePath === "/audio/speech") return { model, amount: 1, usageKind: "audio" };
-    if (routePath === "/videos" || routePath === "/video/generations" || routePath === "/videos/generations" || routePath === "/contents/generations/tasks") return { model, amount: 1, usageKind: "video" };
-    if (routePath === "/responses") return { model, amount: 1, usageKind: hasResponsesImageGenerationTool(payload) ? "image" : "text" };
+    if (routePath === "/videos" || routePath === "/video/generations" || routePath === "/videos/generations" || routePath === "/contents/generations/tasks") return { model, amount: videoParameterMultiplier(payload, multipliers), usageKind: "video" };
+    if (routePath === "/responses") {
+        const isImage = hasResponsesImageGenerationTool(payload);
+        return { model, amount: isImage ? imageQualityMultiplier(payload, multipliers) : 1, usageKind: isImage ? "image" : "text" };
+    }
     if (routePath === "/chat/completions") return { model, amount: 1, usageKind: "text" };
     if (apiFormat === "gemini" && routePath.includes(":streamgeneratecontent")) return { model, amount: 1, usageKind: "text" };
     if (apiFormat === "gemini" && routePath.includes(":generatecontent")) return { model, amount: 1, usageKind: hasGeminiImageResponseModality(payload) ? "image" : "text" };
@@ -231,6 +234,39 @@ function readPathModel(path: string[]) {
 function readRequestCount(payload: Record<string, unknown>) {
     const count = Math.floor(Number(payload.n) || 1);
     return Math.max(1, Math.min(1000, count));
+}
+
+function imageQualityMultiplier(payload: Record<string, unknown>, multipliers?: GenerationPointMultipliers) {
+    return multiplierValue(multipliers?.imageQuality, normalizeImageQualityKey(payload.quality));
+}
+
+function videoParameterMultiplier(payload: Record<string, unknown>, multipliers?: GenerationPointMultipliers) {
+    return multiplierValue(multipliers?.videoQuality, normalizeVideoQualityKey(payload.resolution_name || payload.resolution || payload.quality || payload.vquality)) * multiplierValue(multipliers?.videoSeconds, normalizeVideoSecondsKey(payload.duration || payload.seconds));
+}
+
+function multiplierValue(values: Record<string, number> | undefined, key: string) {
+    const value = values?.[key];
+    return Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 1;
+}
+
+function normalizeImageQualityKey(value: unknown) {
+    const key = String(value || "auto").trim().toLowerCase();
+    if (key === "hd") return "high";
+    if (key === "standard") return "medium";
+    return key || "auto";
+}
+
+function normalizeVideoQualityKey(value: unknown) {
+    const key = String(value || "720").trim().toLowerCase();
+    if (key === "low") return "480";
+    if (key === "auto" || key === "medium" || key === "high") return "720";
+    return key.replace(/p$/, "") || "720";
+}
+
+function normalizeVideoSecondsKey(value: unknown) {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds)) return "5";
+    return String(Math.max(-1, Math.floor(seconds)));
 }
 
 function hasGeminiImageResponseModality(payload: Record<string, unknown>) {
@@ -257,7 +293,7 @@ function readRequestBody(contentType: string | null, body?: ArrayBuffer): Record
 
 function readMultipartFields(text: string): Record<string, string> {
     const fields: Record<string, string> = {};
-    for (const key of ["model", "n"]) {
+    for (const key of ["model", "n", "quality", "resolution_name", "resolution", "vquality", "seconds", "duration"]) {
         const match = text.match(new RegExp(`name="${key}"\\r?\\n\\r?\\n([^\\r\\n]+)`));
         if (match?.[1]) fields[key] = match[1].trim();
     }

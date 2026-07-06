@@ -41,6 +41,12 @@ export type GenerationConcurrencySettings = {
     video: number;
 };
 
+export type GenerationPointMultipliers = {
+    imageQuality: Record<string, number>;
+    videoQuality: Record<string, number>;
+    videoSeconds: Record<string, number>;
+};
+
 export type GenerationAssetStorageSettings = {
     imageServerFallback: boolean;
     videoServerFallback: boolean;
@@ -184,6 +190,7 @@ export type AuthSettings = {
     defaultPoints: number;
     checkInRewardPoints: number;
     modelPointCosts: ModelPointCosts;
+    generationPointMultipliers: GenerationPointMultipliers;
     generationConcurrency: GenerationConcurrencySettings;
     generationAssetStorage: GenerationAssetStorageSettings;
     systemChannels: SystemModelChannel[];
@@ -247,6 +254,11 @@ export const DEFAULT_MAIL_SETTINGS: MailSettings = {
     fromEmail: "",
     fromName: "VOZEB",
 };
+const DEFAULT_GENERATION_POINT_MULTIPLIERS: GenerationPointMultipliers = {
+    imageQuality: { auto: 1, low: 1, medium: 1, high: 1 },
+    videoQuality: { "480": 1, "720": 1, "1080": 1 },
+    videoSeconds: { "-1": 1, "5": 1, "10": 1 },
+};
 const DEFAULT_SETTINGS: AuthSettings = {
     site: DEFAULT_SITE_SETTINGS,
     registrationEnabled: true,
@@ -256,6 +268,7 @@ const DEFAULT_SETTINGS: AuthSettings = {
     defaultPoints: DEFAULT_USER_POINTS,
     checkInRewardPoints: DEFAULT_CHECK_IN_REWARD_POINTS,
     modelPointCosts: {},
+    generationPointMultipliers: DEFAULT_GENERATION_POINT_MULTIPLIERS,
     generationConcurrency: { image: 4, video: 1 },
     generationAssetStorage: {
         imageServerFallback: true,
@@ -333,7 +346,7 @@ export async function checkInUser(userId: string) {
         if (db.checkIns.some((item) => item.userId === userId && item.date === today)) throw new AuthInputError("今天已经签到过了");
 
         const rewardPoints = normalizePoints(db.settings.checkInRewardPoints, DEFAULT_CHECK_IN_REWARD_POINTS);
-        user.pointsBalance = normalizePoints(user.pointsBalance, db.settings.defaultPoints) + rewardPoints;
+        user.pointsBalance = normalizePointAmount(normalizePoints(user.pointsBalance, db.settings.defaultPoints) + rewardPoints, db.settings.defaultPoints);
         user.updatedAt = new Date().toISOString();
         db.checkIns.push({ userId, date: today, rewardPoints, createdAt: user.updatedAt });
         addPointRecord(db, {
@@ -354,15 +367,15 @@ export async function consumeUserPoints(userId: string, model: string, amount = 
         if (!user || user.status !== "active") throw new AuthInputError("账号不可用");
 
         const multiplier = resolveModelPointCost(db.settings.modelPointCosts, model);
-        const units = Math.max(1, Math.min(1000, Math.floor(Number(amount) || 1)));
-        const cost = Math.max(0, Math.ceil(units * multiplier));
+        const units = Math.min(1000, normalizePointAmount(amount, 1));
+        const cost = normalizePointAmount(units * multiplier, 0);
         const balance = normalizePoints(user.pointsBalance, db.settings.defaultPoints);
 
         if (cost > balance) {
             throw new QuotaExceededError(`积分不足，当前余额 ${balance}，本次需要 ${cost}`);
         }
 
-        user.pointsBalance = balance - cost;
+        user.pointsBalance = normalizePointAmount(balance - cost, 0);
         user.updatedAt = new Date().toISOString();
         addPointRecord(db, {
             userId,
@@ -382,10 +395,10 @@ export async function refundUserPoints(userId: string, model: string, amount: nu
         const user = db.users.find((item) => item.id === userId);
         if (!user) return null;
 
-        const refund = Math.max(0, Math.floor(Number(amount) || 0));
+        const refund = normalizePointAmount(amount, 0);
         if (!refund) return toPublicUser(user, db);
 
-        user.pointsBalance = normalizePoints(user.pointsBalance, db.settings.defaultPoints) + refund;
+        user.pointsBalance = normalizePointAmount(normalizePoints(user.pointsBalance, db.settings.defaultPoints) + refund, db.settings.defaultPoints);
         user.updatedAt = new Date().toISOString();
         addPointRecord(db, {
             userId,
@@ -706,7 +719,7 @@ function toPublicUser(user: StoredUser, db?: AuthDatabase): PublicUser {
 async function readAuthDb(): Promise<AuthDatabase> {
     try {
         const raw = await readFile(AUTH_DATA_FILE, "utf8");
-        return normalizeDb(JSON.parse(raw) as Partial<AuthDatabase>);
+        return normalizeDb(JSON.parse(raw.trimStart().replace(/^\uFEFF/, "")) as Partial<AuthDatabase>);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return emptyDb();
         throw error;
@@ -795,6 +808,7 @@ function normalizeSettings(settings: AuthSettings): AuthSettings {
         defaultPoints: normalizePoints(settings.defaultPoints, legacyQuotaToPoints(legacySettings.defaultQuota, DEFAULT_USER_POINTS)),
         checkInRewardPoints: normalizePoints(settings.checkInRewardPoints, legacyQuotaToPoints(legacySettings.checkInReward, DEFAULT_CHECK_IN_REWARD_POINTS)),
         modelPointCosts: normalizeModelPointCosts(settings.modelPointCosts),
+        generationPointMultipliers: normalizeGenerationPointMultipliers(settings.generationPointMultipliers),
         generationConcurrency: normalizeGenerationConcurrency(settings.generationConcurrency),
         generationAssetStorage: normalizeGenerationAssetStorage(settings.generationAssetStorage),
         systemChannels: Array.isArray(settings.systemChannels) ? settings.systemChannels.map(normalizeSystemChannel).filter((channel) => channel.name || channel.baseUrl || channel.models.length) : [],
@@ -929,8 +943,19 @@ function normalizeMailSettings(settings: Partial<MailSettings> | undefined): Mai
 }
 
 function normalizeText(value: unknown, fallback: string, maxLength: number) {
-    const text = typeof value === "string" ? value.trim() : "";
+    const text = typeof value === "string" ? repairKnownMojibakeText(value.trim()) : "";
     return (text || fallback).slice(0, maxLength);
+}
+
+function repairKnownMojibakeText(value: string) {
+    const replacements: Array<[string, string]> = [
+        ["闈㈠悜 AI 鍥剧墖鍒涗綔涓庣鐞嗙殑 VOZEB 宸ヤ綔鍙?", "面向 AI 图片创作与管理的 VOZEB 工作台"],
+        ["VOZEB,AI 缁樺浘,鏃犻檺鐢诲竷,鎻愮ず璇嶅簱,绱犳潗绠＄悊", "VOZEB,AI 绘图,无限画布,提示词库,素材管理"],
+        ["漏 2026 VOZEB. All rights reserved.", "© 2026 VOZEB. All rights reserved."],
+        ["QQ 閭", "QQ 邮箱"],
+        ["閭鑱旂郴", "邮箱联系"],
+    ];
+    return replacements.reduce((text, [from, to]) => text.replaceAll(from, to), value);
 }
 
 function normalizeLogoUrl(value: unknown) {
@@ -961,9 +986,13 @@ function normalizeSystemChannel(channel: Partial<SystemModelChannel>): SystemMod
 }
 
 function normalizePoints(value: unknown, fallback: number) {
-    const numberValue = Math.floor(Number(value));
+    return normalizePointAmount(value, fallback);
+}
+
+function normalizePointAmount(value: unknown, fallback: number) {
+    const numberValue = Number(value);
     if (!Number.isFinite(numberValue) || numberValue < 0) return fallback;
-    return Math.min(numberValue, 1_000_000);
+    return Math.min(Number(numberValue.toFixed(2)), 1_000_000);
 }
 
 function normalizePointMultiplier(value: unknown, fallback = 1) {
@@ -979,6 +1008,27 @@ function normalizeModelPointCosts(value: unknown): ModelPointCosts {
             .map(([model, cost]) => [model.trim(), normalizePointMultiplier(cost)] as const)
             .filter(([model]) => Boolean(model)),
     );
+}
+
+function normalizeGenerationPointMultipliers(value: unknown): GenerationPointMultipliers {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? (value as Partial<GenerationPointMultipliers>) : {};
+    return {
+        imageQuality: normalizeMultiplierMap(source.imageQuality, DEFAULT_GENERATION_POINT_MULTIPLIERS.imageQuality),
+        videoQuality: normalizeMultiplierMap(source.videoQuality, DEFAULT_GENERATION_POINT_MULTIPLIERS.videoQuality),
+        videoSeconds: normalizeMultiplierMap(source.videoSeconds, DEFAULT_GENERATION_POINT_MULTIPLIERS.videoSeconds),
+    };
+}
+
+function normalizeMultiplierMap(value: unknown, defaults: Record<string, number>) {
+    const entries = value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value as Record<string, unknown>) : [];
+    return {
+        ...defaults,
+        ...Object.fromEntries(
+            entries
+                .map(([key, multiplier]) => [key.trim(), normalizePointMultiplier(multiplier)] as const)
+                .filter(([key]) => Boolean(key)),
+        ),
+    };
 }
 
 function resolveModelPointCost(costs: ModelPointCosts, model: string) {

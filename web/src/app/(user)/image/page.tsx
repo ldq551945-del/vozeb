@@ -9,7 +9,7 @@ import { saveAs } from "file-saver";
 
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
-import { requestCreditCost } from "@/constant/credits";
+import { formatCreditAmount, requestCreditCost } from "@/constant/credits";
 import type { InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { browserReadableMediaUrl } from "@/lib/browser-media-url";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -20,6 +20,7 @@ import { nanoid } from "nanoid";
 import { formatBytes, formatDuration, readImageMeta } from "@/lib/image-utils";
 import { APP_STORAGE_NAME, LEGACY_APP_STORAGE_NAME } from "@/lib/storage-keys";
 import { createImageGenerationTask, waitForImageGenerationTask } from "@/services/api/image";
+import { deleteGenerationLogs as deleteServerGenerationLogs, listGenerationLogs, recordGenerationLog, type StoredGenerationLogRecord } from "@/services/api/generation-logs";
 import { deleteStoredImages, resolveImageUrl, resolveStoredImageDataUrl, uploadImage } from "@/services/image-storage";
 import { useAssetStore } from "@/stores/use-asset-store";
 import type { ReferenceImage } from "@/types/image";
@@ -136,7 +137,7 @@ export default function ImagePage() {
     const generationCount = Math.max(1, Math.min(10, Number(config.count) || 1));
     const imageConcurrencyLimit = Math.max(1, Math.min(10, Math.floor(Number(effectiveConfig.generationConcurrency?.image) || 4)));
     const previewPendingCount = results.filter((result) => result.status === "pending").length;
-    const pointsCost = requestCreditCost({ apiSource: effectiveConfig.apiSource, modelPointCosts: effectiveConfig.modelPointCosts, model, count: generationCount });
+    const pointsCost = requestCreditCost({ apiSource: effectiveConfig.apiSource, modelPointCosts: effectiveConfig.modelPointCosts, generationPointMultipliers: effectiveConfig.generationPointMultipliers, kind: "image", model, count: generationCount, quality: effectiveConfig.quality });
 
     useEffect(() => {
         void refreshLogs();
@@ -222,6 +223,7 @@ export default function ImagePage() {
         logWriteQueuesRef.current.set(log.id, nextWrite);
         await nextWrite;
         if (logWriteQueuesRef.current.get(log.id) === nextWrite) logWriteQueuesRef.current.delete(log.id);
+        void recordImageWorkbenchLog(log);
     };
 
     function getLatestLog(logId: string) {
@@ -471,7 +473,7 @@ export default function ImagePage() {
 
     const deleteSelectedLogs = () => {
         const imageKeys = logs.filter((log) => selectedLogIds.includes(log.id)).flatMap((log) => log.images.map((image) => image.storageKey).filter((key): key is string => Boolean(key)));
-        void Promise.all([deleteStoredImages(imageKeys), ...selectedLogIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]).then(refreshLogs);
+        void Promise.all([deleteStoredImages(imageKeys), deleteServerGenerationLogs(selectedLogIds.flatMap(imageServerLogIds)), ...selectedLogIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]).then(refreshLogs);
         selectedLogIds.forEach((id) => resultsByLogIdRef.current.delete(id));
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
@@ -712,7 +714,7 @@ export default function ImagePage() {
                                 <span className="inline-flex items-center justify-center gap-2">
                                     <span className="inline-flex items-center gap-1.5 tabular-nums">
                                         <Sparkles className="size-[17px]" />
-                                        <span className="text-sm font-semibold leading-none">{pointsCost.toLocaleString()}</span>
+                                        <span className="text-sm font-semibold leading-none">{formatCreditAmount(pointsCost)}</span>
                                     </span>
                                     <span>开始生成</span>
                                 </span>
@@ -807,7 +809,7 @@ export default function ImagePage() {
                     event.target.value = "";
                 }}
             />
-            <Drawer title="生成记录" placement="bottom" height="min(86dvh, 720px)" open={logsOpen} onClose={() => setLogsOpen(false)} styles={{ body: { padding: 0, overflow: "hidden" } }}>
+            <Drawer title="生成记录" placement="bottom" size="min(86dvh, 720px)" open={logsOpen} onClose={() => setLogsOpen(false)} styles={{ body: { padding: 0, overflow: "hidden" } }}>
                 <div className="thin-scrollbar h-full overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4">
                     <LogPanel
                         logs={logs}
@@ -875,6 +877,7 @@ function ResultImageCard({
     onSaveAsset: (image: GeneratedImage, index: number) => void;
 }) {
     const hasImage = Boolean(image.dataUrl) && !missing;
+    const source = imageFallbackSource(image);
     return (
         <div className="relative overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
             <ResultSelectCheckbox selected={selected} onSelectedChange={onSelectedChange} />
@@ -889,7 +892,10 @@ function ResultImageCard({
                 )}
             </div>
             <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
-                <div className="flex min-w-0 gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+                    <Tag color={source.color} className="m-0">
+                        {source.label}
+                    </Tag>
                     <span>
                         {image.width}x{image.height}
                     </span>
@@ -916,6 +922,15 @@ function ResultImageCard({
             </div>
         </div>
     );
+}
+
+function imageFallbackSource(image: GeneratedImage): { label: string; color: string } {
+    const value = image.dataUrl || "";
+    if (value.startsWith("data:") || value.startsWith("blob:")) return { label: "本地缓存", color: "green" };
+    if (isRemoteImageUrl(image.remoteUrl || "") || isRemoteImageUrl(value)) return { label: "远程地址", color: "blue" };
+    if (isServerImageUrl(image.serverUrl || "") || isServerImageUrl(value)) return { label: "服务器副本", color: "purple" };
+    if (image.storageKey) return { label: "本地缓存", color: "green" };
+    return { label: "未知来源", color: "default" };
 }
 
 function PendingImageCard({ large }: { large?: boolean }) {
@@ -1150,11 +1165,115 @@ async function readStoredLogs() {
                 void logStore.setItem(key, value);
             });
         }
-        const logs = await Promise.all(values.map(normalizeLog));
-        return logs.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const [localLogs, remoteLogs] = await Promise.all([Promise.all(values.map(normalizeLog)), readServerImageLogs()]);
+        localLogs.forEach((log) => void recordImageWorkbenchLog(log));
+        const merged = new Map<string, GenerationLog>();
+        remoteLogs.forEach((log) => merged.set(log.id, log));
+        localLogs.forEach((log) => merged.set(log.id, log));
+        const logs = Array.from(merged.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        await Promise.all(logs.filter((log) => !values.some((item) => item.id === log.id)).map((log) => logStore.setItem(log.id, serializeLog(log)).catch(() => undefined)));
+        return logs;
     } catch {
         return [];
     }
+}
+
+async function readServerImageLogs() {
+    try {
+        const payload = await listGenerationLogs({ kind: "image", source: "image-workbench", pageSize: 100 });
+        const aggregateAssetUrls = new Set(
+            payload.items
+                .filter((item) => item.id.startsWith("image-workbench:"))
+                .flatMap((item) => item.assets.map(stableAssetUrl).filter(Boolean)),
+        );
+        const records = payload.items.filter((item) => item.id.startsWith("image-workbench:") || !item.assets.some((asset) => aggregateAssetUrls.has(stableAssetUrl(asset))));
+        return Promise.all(records.map(serverImageLogToWorkbenchLog));
+    } catch {
+        return [];
+    }
+}
+
+function stableAssetUrl(asset: StoredGenerationLogRecord["assets"][number]) {
+    return asset.remoteUrl || asset.serverUrl || asset.url || "";
+}
+
+async function serverImageLogToWorkbenchLog(record: StoredGenerationLogRecord): Promise<GenerationLog> {
+    const createdAt = Date.parse(record.createdAt) || Date.now();
+    const images: GeneratedImage[] = record.assets.map((asset, index) => ({
+        id: `${serverWorkbenchLogId(record)}:${index}`,
+        dataUrl: browserReadableMediaUrl(stableAssetUrl(asset)),
+        remoteUrl: asset.remoteUrl,
+        serverUrl: asset.serverUrl,
+        storageKey: undefined,
+        slotIndex: index,
+        durationMs: record.durationMs || 0,
+        width: asset.width || 0,
+        height: asset.height || 0,
+        bytes: asset.bytes || 0,
+        mimeType: asset.mimeType,
+    }));
+    return normalizeLog({
+        id: serverWorkbenchLogId(record),
+        createdAt,
+        title: record.title || record.prompt || record.model,
+        prompt: record.prompt,
+        time: new Date(createdAt).toLocaleString("zh-CN", { hour12: false }),
+        model: record.model,
+        config: { model: record.model, imageModel: record.model, quality: "", size: "", count: String(record.count || Math.max(1, images.length)) },
+        references: [],
+        durationMs: record.durationMs || 0,
+        successCount: record.successCount || images.length,
+        failCount: record.failCount || 0,
+        imageCount: record.count || Math.max(1, images.length + (record.failCount || 0)),
+        size: "",
+        quality: "",
+        status: record.status === "pending" ? "生成中" : record.status === "failed" ? "失败" : "成功",
+        images,
+        thumbnails: images.map((image) => image.dataUrl),
+        error: record.error,
+    });
+}
+
+function serverWorkbenchLogId(record: StoredGenerationLogRecord) {
+    return record.id.replace(/^image-workbench:/, "").replace(/^image-task:/, "image-task-");
+}
+
+function imageServerLogIds(id: string) {
+    if (id.startsWith("image-task-")) return [`image-task:${id.replace(/^image-task-/, "")}`];
+    return [`image-workbench:${id}`];
+}
+
+async function recordImageWorkbenchLog(log: GenerationLog) {
+    const assets = log.images
+        .map((image) => ({
+            type: "image" as const,
+            url: image.remoteUrl || image.serverUrl || (isStableImageUrl(image.dataUrl) ? image.dataUrl : ""),
+            remoteUrl: image.remoteUrl,
+            serverUrl: image.serverUrl,
+            mimeType: image.mimeType,
+            width: image.width,
+            height: image.height,
+            bytes: image.bytes,
+        }))
+        .filter((asset) => Boolean(asset.url));
+    await recordGenerationLog({
+        id: `image-workbench:${log.id}`,
+        kind: "image",
+        source: "image-workbench",
+        status: log.pendingCount ? "pending" : log.failCount && !log.successCount ? "failed" : "success",
+        title: log.title,
+        prompt: log.prompt,
+        model: log.model || log.config.imageModel || log.config.model,
+        summary: log.pendingCount ? "图片生成中" : log.failCount && !log.successCount ? "图片生成失败" : "图片生成完成",
+        durationMs: log.durationMs,
+        count: log.imageCount || Math.max(1, assets.length + (log.failCount || 0)),
+        successCount: log.successCount || assets.length,
+        failCount: log.failCount || 0,
+        assets,
+        error: log.error,
+        createdAt: log.createdAt,
+        completedAt: log.pendingCount ? undefined : Date.now(),
+    }).catch(() => undefined);
 }
 
 async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog> {

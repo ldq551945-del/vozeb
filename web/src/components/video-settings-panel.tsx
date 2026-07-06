@@ -11,7 +11,6 @@ import {
     normalizeSeedanceDuration,
     normalizeSeedanceRatio,
     normalizeSeedanceResolution,
-    seedanceDurationOptions,
     seedancePixelLabel,
     seedanceRatioOptions,
     seedanceResolutionOptions,
@@ -33,7 +32,8 @@ const sizeOptions = [
     { value: "auto", label: "auto", width: 0, height: 0 },
 ];
 
-const secondOptions = [6, 10, 12, 16, 20];
+const defaultSecondOptions = [5, 10];
+const legacyDefaultSecondKeys = new Set(["12", "16"]);
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -48,7 +48,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
-    const seconds = config.videoSeconds || "6";
+    const seconds = config.videoSeconds || "5";
+    const secondOptions = videoSecondOptionsFromConfig(config);
     const size = normalizeVideoSizeValue(config.size);
     const dimensions = readSizeDimensions(size);
     const resolution = normalizeVideoResolutionValue(config.vquality);
@@ -114,6 +115,7 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
     const resolution = normalizeSeedanceResolution(config.vquality, model);
     const ratio = normalizeSeedanceRatio(config.size);
     const duration = normalizeSeedanceDuration(config.videoSeconds);
+    const durationOptions = videoSecondOptionsFromConfig(config, true, 15);
     const generateAudio = boolConfig(config.videoGenerateAudio, true);
     const watermark = boolConfig(config.videoWatermark, false);
 
@@ -154,7 +156,7 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
                 </SettingGroup>
                 <SettingGroup title="时长" color={theme.node.muted}>
                     <div className="grid grid-cols-4 gap-2.5">
-                        {seedanceDurationOptions.map((value) => (
+                        {durationOptions.map((value) => (
                             <OptionPill key={value} selected={duration === value} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
                                 {value === -1 ? "智能" : `${value}s`}
                             </OptionPill>
@@ -187,7 +189,20 @@ export function videoSizeLabel(value: string) {
 
 export function videoSecondsLabel(value: string) {
     if (String(value).trim() === "-1") return "智能";
-    return `${value || "6"}s`;
+    return `${value || "5"}s`;
+}
+
+function videoSecondOptionsFromConfig(config: AiConfig, allowAuto = false, maxSeconds = 20) {
+    const multipliers = config.generationPointMultipliers?.videoSeconds || {};
+    const customOptions = Object.entries(multipliers)
+        .map(([key, multiplier]) => ({ seconds: Number(key), key, multiplier: Number(multiplier) }))
+        .filter((item) => Number.isFinite(item.seconds) && Number.isInteger(item.seconds) && (allowAuto ? item.seconds >= -1 : item.seconds > 0))
+        .filter((item) => item.seconds !== -1 || allowAuto)
+        .filter((item) => item.seconds === -1 || item.seconds <= maxSeconds)
+        .filter((item) => !legacyDefaultSecondKeys.has(item.key) || item.multiplier !== 1)
+        .map((item) => item.seconds);
+    const values = Array.from(new Set([...(allowAuto && customOptions.includes(-1) ? [-1] : []), ...defaultSecondOptions.filter((value) => value <= maxSeconds), ...customOptions.filter((value) => value > 0)]));
+    return values.sort((a, b) => (a === -1 ? -1 : b === -1 ? 1 : a - b));
 }
 
 export function normalizeVideoSizeValue(value: string) {

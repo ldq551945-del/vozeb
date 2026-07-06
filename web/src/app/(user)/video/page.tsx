@@ -10,7 +10,7 @@ import { saveAs } from "file-saver";
 
 import type { InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { ModelPicker } from "@/components/model-picker";
-import { requestCreditCost } from "@/constant/credits";
+import { formatCreditAmount, requestCreditCost } from "@/constant/credits";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { browserReadableMediaUrl } from "@/lib/browser-media-url";
@@ -19,7 +19,7 @@ import { APP_STORAGE_NAME, LEGACY_APP_STORAGE_NAME } from "@/lib/storage-keys";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
-import { recordGenerationLog } from "@/services/api/generation-logs";
+import { deleteGenerationLogs as deleteServerGenerationLogs, listGenerationLogs, recordGenerationLog, type StoredGenerationLogRecord } from "@/services/api/generation-logs";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
@@ -114,7 +114,15 @@ export default function VideoPage() {
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
-    const pointsCost = requestCreditCost({ apiSource: effectiveConfig.apiSource, modelPointCosts: effectiveConfig.modelPointCosts, model });
+    const pointsCost = requestCreditCost({
+        apiSource: effectiveConfig.apiSource,
+        modelPointCosts: effectiveConfig.modelPointCosts,
+        generationPointMultipliers: effectiveConfig.generationPointMultipliers,
+        kind: "video",
+        model,
+        videoQuality: effectiveConfig.vquality,
+        videoSeconds: effectiveConfig.videoSeconds,
+    });
     const canGenerate = Boolean(prompt.trim());
     const videoConcurrencyLimit = Math.max(1, Math.min(5, Math.floor(Number(effectiveConfig.generationConcurrency?.video) || 1)));
     const previewPendingCount = results.filter((result) => result.status === "pending").length;
@@ -417,7 +425,7 @@ export default function VideoPage() {
         });
         syncActiveVideoCount();
         startQueuedVideoLogs();
-        void Promise.all([deleteStoredMedia(mediaKeys), ...selectedLogIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]).then(refreshLogs);
+        void Promise.all([deleteStoredMedia(mediaKeys), deleteServerGenerationLogs(selectedLogIds.map((id) => `video-workbench:${id}`)), ...selectedLogIds.flatMap((id) => [logStore.removeItem(id), legacyLogStore.removeItem(id)])]).then(refreshLogs);
         if (previewLog && selectedLogIds.includes(previewLog.id)) {
             setPreviewLog(null);
             setResults([]);
@@ -746,7 +754,7 @@ export default function VideoPage() {
                                 <span className="inline-flex items-center justify-center gap-2">
                                     <span className="inline-flex items-center gap-1.5 tabular-nums">
                                         <Sparkles className="size-[17px]" />
-                                        <span className="text-sm font-semibold leading-none">{pointsCost.toLocaleString()}</span>
+                                        <span className="text-sm font-semibold leading-none">{formatCreditAmount(pointsCost)}</span>
                                     </span>
                                     <span>开始生成</span>
                                 </span>
@@ -825,7 +833,7 @@ export default function VideoPage() {
                     event.target.value = "";
                 }}
             />
-            <Drawer title="生成记录" placement="bottom" height="min(86dvh, 720px)" open={logsOpen} onClose={() => setLogsOpen(false)} styles={{ body: { padding: 0, overflow: "hidden" } }}>
+            <Drawer title="生成记录" placement="bottom" size="min(86dvh, 720px)" open={logsOpen} onClose={() => setLogsOpen(false)} styles={{ body: { padding: 0, overflow: "hidden" } }}>
                 <div className="thin-scrollbar h-full overflow-y-auto px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4">
                     <LogPanel
                         logs={logs}
@@ -884,6 +892,7 @@ function ResultVideoCard({
     onDownload: (video: GeneratedVideo) => void;
     onSaveAsset: (video: GeneratedVideo) => void;
 }) {
+    const source = videoFallbackSource(video);
     return (
         <div className="relative overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
             <ResultSelectCheckbox selected={selected} onSelectedChange={onSelectedChange} />
@@ -891,7 +900,10 @@ function ResultVideoCard({
                 <video src={video.url} controls className="h-full w-full object-contain" />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-stone-200 px-3 py-2.5 dark:border-stone-800">
-                <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-stone-500 dark:text-stone-400">
+                    <Tag color={source.color} className="m-0">
+                        {source.label}
+                    </Tag>
                     <span>
                         {video.width}x{video.height}
                     </span>
@@ -911,6 +923,15 @@ function ResultVideoCard({
     );
 }
 
+function videoFallbackSource(video: GeneratedVideo): { label: string; color: string } {
+    const value = video.url || "";
+    if (value.startsWith("data:") || value.startsWith("blob:")) return { label: "本地缓存", color: "green" };
+    if (isRemoteMediaUrl(video.remoteUrl || "") || isRemoteMediaUrl(value)) return { label: "远程地址", color: "blue" };
+    if (isServerMediaUrl(video.serverUrl || "") || isServerMediaUrl(value)) return { label: "服务器副本", color: "purple" };
+    if (video.storageKey) return { label: "本地缓存", color: "green" };
+    return { label: "未知来源", color: "default" };
+}
+
 function PendingVideoCard() {
     return (
         <div className="relative aspect-video overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
@@ -923,11 +944,13 @@ function PendingVideoCard() {
 }
 
 function FailedVideoCard({ error, selected, onSelectedChange, onRetry }: { error: string; selected?: boolean; onSelectedChange?: (checked: boolean) => void; onRetry: () => void }) {
+    const failure = videoFailureDisplay(error);
     return (
         <div className="relative overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-950 dark:bg-red-950/20">
             <ResultSelectCheckbox selected={selected} onSelectedChange={onSelectedChange} />
             <div className="flex aspect-video flex-col items-center justify-center gap-3 p-5 text-center">
-                <div className="text-sm font-medium text-red-600 dark:text-red-300">生成失败</div>
+                <div className="text-sm font-medium text-red-600 dark:text-red-300">{failure.title}</div>
+                <div className="text-xs text-red-500/80 dark:text-red-300/80">{failure.hint}</div>
                 <Typography.Paragraph ellipsis={{ rows: 4 }} className="!mb-0 !text-xs !text-red-500 dark:!text-red-300">
                     {error}
                 </Typography.Paragraph>
@@ -939,6 +962,13 @@ function FailedVideoCard({ error, selected, onSelectedChange, onRetry }: { error
             </div>
         </div>
     );
+}
+
+function videoFailureDisplay(error: string) {
+    if (error.startsWith("上游生成阶段失败")) return { title: "上游生成失败", hint: "任务已创建，但上游生成阶段失败。" };
+    if (error.startsWith("视频任务创建失败") || error.startsWith("Seedance 任务创建失败")) return { title: "任务创建失败", hint: "本地请求未能成功创建上游任务。" };
+    if (error.startsWith("视频任务查询失败") || error.startsWith("Seedance 任务查询失败")) return { title: "任务查询失败", hint: "任务已提交后，轮询上游状态失败。" };
+    return { title: "生成失败", hint: "请检查模型、额度和接口返回。" };
 }
 
 function ResultSelectCheckbox({ selected, onSelectedChange }: { selected?: boolean; onSelectedChange?: (checked: boolean) => void }) {
@@ -1121,10 +1151,70 @@ async function readStoredLogs() {
                 void logStore.setItem(key, value);
             });
         }
-        return (await Promise.all(logs.map(normalizeLog))).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        const [localLogs, remoteLogs] = await Promise.all([Promise.all(logs.map(normalizeLog)), readServerVideoLogs()]);
+        localLogs.filter((log) => log.status !== "生成中").forEach((log) => void recordVideoGenerationLog(log));
+        const merged = new Map<string, GenerationLog>();
+        remoteLogs.forEach((log) => merged.set(log.id, log));
+        localLogs.forEach((log) => merged.set(log.id, log));
+        const nextLogs = Array.from(merged.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        await Promise.all(nextLogs.filter((log) => !logs.some((item) => item.id === log.id)).map((log) => logStore.setItem(log.id, serializeLog(log)).catch(() => undefined)));
+        return nextLogs;
     } catch {
         return [];
     }
+}
+
+async function readServerVideoLogs() {
+    try {
+        const payload = await listGenerationLogs({ kind: "video", source: "video-workbench", pageSize: 100 });
+        return Promise.all(payload.items.filter((item) => item.id.startsWith("video-workbench:")).map(serverVideoLogToWorkbenchLog));
+    } catch {
+        return [];
+    }
+}
+
+async function serverVideoLogToWorkbenchLog(record: StoredGenerationLogRecord): Promise<GenerationLog> {
+    const createdAt = Date.parse(record.createdAt) || Date.now();
+    const asset = record.assets[0];
+    const url = asset ? browserReadableMediaUrl(asset.remoteUrl || asset.serverUrl || asset.url || "") : "";
+    const video: GeneratedVideo | undefined = asset && url
+        ? {
+              id: serverVideoLogId(record),
+              url,
+              remoteUrl: asset.remoteUrl,
+              serverUrl: asset.serverUrl,
+              storageKey: "",
+              durationMs: record.durationMs || 0,
+              width: asset.width || 0,
+              height: asset.height || 0,
+              bytes: asset.bytes || 0,
+              mimeType: asset.mimeType || "video/mp4",
+          }
+        : undefined;
+    return normalizeLog({
+        id: serverVideoLogId(record),
+        createdAt,
+        title: record.title || record.prompt || record.model,
+        prompt: record.prompt,
+        time: new Date(createdAt).toLocaleString("zh-CN", { hour12: false }),
+        model: record.model,
+        config: { model: record.model, videoModel: record.model, size: "", vquality: "", videoSeconds: "", videoGenerateAudio: "true", videoWatermark: "false" },
+        references: [],
+        videoReferences: [],
+        audioReferences: [],
+        durationMs: record.durationMs || 0,
+        size: "",
+        resolution: "",
+        seconds: "",
+        status: record.status === "pending" ? "生成中" : record.status === "failed" ? "失败" : "成功",
+        video,
+        error: record.error,
+        resultDeleted: !video && record.status === "success",
+    });
+}
+
+function serverVideoLogId(record: StoredGenerationLogRecord) {
+    return record.id.replace(/^video-workbench:/, "");
 }
 
 async function recordVideoGenerationLog(log: GenerationLog) {
@@ -1382,7 +1472,7 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
 
 function normalizeVideoSeconds(value: string) {
     if (String(value).trim() === "-1") return "-1";
-    const seconds = Math.floor(Number(value) || 6);
+    const seconds = Math.floor(Number(value) || 5);
     return String(Math.max(1, Math.min(20, seconds)));
 }
 

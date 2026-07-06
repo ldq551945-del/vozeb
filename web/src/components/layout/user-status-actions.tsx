@@ -11,7 +11,7 @@ import { App, Dropdown, Popover, Spin, Tag } from "antd";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { GitHubLink } from "@/components/layout/github-link";
-import { CreditSymbol } from "@/constant/credits";
+import { CreditSymbol, formatCreditAmount } from "@/constant/credits";
 import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useConfigStore } from "@/stores/use-config-store";
@@ -205,17 +205,17 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     };
 
     return (
-        <div ref={rootRef} className={cn("user-status-actions inline-flex shrink-0 items-center gap-1.5 sm:gap-2", variant === "canvas" ? "canvas-user-status-actions" : "app-user-status-actions")}>
+        <div ref={rootRef} className={cn("user-status-actions inline-flex max-w-full items-center gap-1.5 sm:gap-2", variant === "canvas" ? "canvas-user-status-actions shrink-0" : "app-user-status-actions min-w-0")}>
             {user ? (
                 <Popover rootClassName="user-points-popover" open={pointsOpen} onOpenChange={handlePointsOpenChange} trigger="click" placement="bottomRight" content={<PointRecordPanel loading={pointsLoading} records={pointRecords} />}>
                     <button
                         type="button"
-                        className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "gap-1 px-2 text-xs font-semibold sm:gap-1.5 sm:px-2.5", variant === "canvas" ? "canvas-points-action" : "app-points-action")}
+                        className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "gap-1 px-2 text-xs font-semibold sm:gap-1.5 sm:px-2.5", variant === "canvas" ? "canvas-points-action" : "app-points-action shrink-0")}
                         style={iconStyle}
                         title="积分余额"
                     >
                         <CreditSymbol className="text-sm" />
-                        {user.pointsBalance.toLocaleString()}
+                        {formatCreditAmount(user.pointsBalance)}
                     </button>
                 </Popover>
             ) : null}
@@ -260,13 +260,13 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                     <Dropdown {...(variant === "canvas" ? { open: accountOpen, onOpenChange: handleAccountOpenChange } : {})} menu={{ items: accountItems, onClick: handleAccountMenuClick }} trigger={["click"]} placement="bottomRight">
                         <button
                             type="button"
-                            className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "max-w-[36px] gap-2 px-2.5 sm:max-w-40", variant === "canvas" ? "canvas-account-action" : "app-account-action")}
+                            className={cn(variant === "canvas" ? canvasControlClass : defaultControlClass, "min-w-0 max-w-[36px] gap-2 px-2.5 sm:max-w-32 xl:max-w-40", variant === "canvas" ? "canvas-account-action" : "app-account-action")}
                             style={iconStyle}
                             aria-label="账户菜单"
-                            title="账户菜单"
+                            title={user.displayName || user.username}
                         >
                             <UserCircle className="size-4 shrink-0" />
-                            <span className="hidden truncate sm:inline">{user.displayName || user.username}</span>
+                            <span className="hidden min-w-0 truncate sm:inline">{user.displayName || user.username}</span>
                         </button>
                     </Dropdown>
                 </>
@@ -286,7 +286,7 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
 }
 
 function formatQuotaReward(rewardPoints?: number) {
-    return `${Math.max(0, Math.floor(Number(rewardPoints) || 0)).toLocaleString()} 积分`;
+    return `${formatCreditAmount(Math.max(0, Number(rewardPoints) || 0))} 积分`;
 }
 
 function PointRecordPanel({ loading, records }: { loading: boolean; records: PointRecord[] }) {
@@ -308,13 +308,13 @@ function PointRecordPanel({ loading, records }: { loading: boolean; records: Poi
                                     <span className="break-words text-sm font-semibold leading-5 text-stone-800 dark:text-stone-100">{description.model}</span>
                                     <Tag color={positive ? "green" : "red"} className="m-0 shrink-0">
                                         {positive ? "+" : ""}
-                                        {record.amount}
+                                        {formatCreditAmount(record.amount)}
                                     </Tag>
                                 </div>
                                 {description.action ? <div className="mt-0.5 break-words text-xs leading-4 text-stone-500 dark:text-stone-400">{description.action}</div> : null}
                                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-500">
                                     <span>{new Date(record.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-                                    <span>余额 {record.balanceAfter.toLocaleString()}</span>
+                                    <span>余额 {formatCreditAmount(record.balanceAfter)}</span>
                                 </div>
                             </div>
                         );

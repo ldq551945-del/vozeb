@@ -290,7 +290,7 @@ function readStatusError(status: number | undefined, fallback: string) {
 function shouldFallbackToChatCompletions(status: number, message: string) {
     if (status === 404 || status === 405) return true;
     if (status !== 400) return false;
-    return /responses|endpoint|route|path|not found|unsupported|unknown url|cannot post|invalid url|no such/i.test(message);
+    return /responses|endpoint|route|path|not found|not implemented|unsupported|unknown url|cannot post|invalid url|no such/i.test(message);
 }
 
 function taskUrl(config: TextTaskConfig, path: string, origin: string) {

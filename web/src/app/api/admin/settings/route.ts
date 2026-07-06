@@ -30,6 +30,7 @@ export async function PATCH(request: Request) {
         if (typeof body.defaultPoints === "number") patch.defaultPoints = body.defaultPoints;
         if (typeof body.checkInRewardPoints === "number") patch.checkInRewardPoints = body.checkInRewardPoints;
         if (body.modelPointCosts && typeof body.modelPointCosts === "object") patch.modelPointCosts = body.modelPointCosts;
+        if (body.generationPointMultipliers && typeof body.generationPointMultipliers === "object") patch.generationPointMultipliers = body.generationPointMultipliers;
         if (body.generationConcurrency && typeof body.generationConcurrency === "object") patch.generationConcurrency = body.generationConcurrency;
         if (body.generationAssetStorage && typeof body.generationAssetStorage === "object") patch.generationAssetStorage = body.generationAssetStorage;
         if (Array.isArray(body.systemChannels)) patch.systemChannels = body.systemChannels;

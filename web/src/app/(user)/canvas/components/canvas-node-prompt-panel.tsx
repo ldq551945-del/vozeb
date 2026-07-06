@@ -5,7 +5,7 @@ import { LoaderCircle, Square } from "lucide-react";
 import { Button } from "antd";
 
 import { ModelPicker } from "@/components/model-picker";
-import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+import { CreditSymbol, formatCreditAmount, requestCreditCost } from "@/constant/credits";
 import { defaultConfig, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -40,7 +40,17 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
     const isEditingExistingContent = hasTextContent || hasImageContent;
     const [prompt, setPrompt] = useState(isEditingExistingContent ? "" : node.metadata?.prompt || "");
-    const credits = requestCreditCost({ apiSource: config.apiSource, modelPointCosts: config.modelPointCosts, model: config.model, count: mode === "image" ? config.count : 1 });
+    const credits = requestCreditCost({
+        apiSource: config.apiSource,
+        modelPointCosts: config.modelPointCosts,
+        generationPointMultipliers: config.generationPointMultipliers,
+        kind: mode,
+        model: config.model,
+        count: mode === "image" ? config.count : 1,
+        quality: config.quality,
+        videoQuality: config.vquality,
+        videoSeconds: config.videoSeconds,
+    });
 
     useEffect(() => {
         setPrompt(isEditingExistingContent ? "" : node.metadata?.prompt || "");
@@ -133,7 +143,7 @@ export function CanvasNodePromptPanel({ node, isRunning, onPromptChange, onConfi
                                 <span className="text-xs font-semibold">生成</span>
                                 <span className="inline-flex items-center gap-1 text-xs font-medium tabular-nums">
                                     <CreditSymbol />
-                                    {credits.toLocaleString()}
+                                    {formatCreditAmount(credits)}
                                 </span>
                             </>
                         )}

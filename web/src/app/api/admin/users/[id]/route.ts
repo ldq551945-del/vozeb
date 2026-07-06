@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { deleteUserByAdmin, isAuthInputError, updateUserByAdmin, type UserRole, type UserStatus } from "@/lib/auth/store";
 import { readJsonBody } from "@/lib/auth/request";
 import { getCurrentUser } from "@/lib/auth/session";
+import { deleteGenerationLogsByUserId } from "@/lib/server/generation-log-store";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     try {
         const { id } = await context.params;
         await deleteUserByAdmin(currentUser.id, id);
+        await deleteGenerationLogsByUserId(id);
         return NextResponse.json({ ok: true });
     } catch (error) {
         if (isAuthInputError(error)) return NextResponse.json({ error: error.message }, { status: error.status });

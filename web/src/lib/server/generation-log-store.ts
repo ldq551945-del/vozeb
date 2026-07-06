@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { dirname, resolve, sep } from "node:path";
 
 import { getAuthSettings, type GenerationAssetStorageSettings, type UserRole } from "@/lib/auth/store";
@@ -133,6 +135,9 @@ export async function recordGenerationLog(input: GenerationLogInput) {
         const now = new Date().toISOString();
         const id = normalizeText(input.id, randomUUID(), 120);
         const existing = db.logs.find((log) => log.id === id);
+        if (existing && existing.userId !== input.userId) {
+            throw new Error("generation log id belongs to another user");
+        }
         const settings = await getAuthSettings().catch(() => null);
         const assets = await normalizeAssets(input.assets || [], settings?.generationAssetStorage);
         const createdAt = normalizeTime(input.createdAt, existing?.createdAt || now);
@@ -173,6 +178,17 @@ export async function deleteGenerationLogs(ids: string[]) {
         const idSet = new Set(normalizedIds);
         const removed = db.logs.filter((log) => idSet.has(log.id));
         db.logs = db.logs.filter((log) => !idSet.has(log.id));
+        await Promise.all(removed.flatMap((log) => log.assets.flatMap(localAssetUrls).map(deleteLocalAsset)));
+        return { deleted: removed.length };
+    });
+}
+
+export async function deleteGenerationLogsByUserId(userId: string) {
+    const targetUserId = userId.trim();
+    if (!targetUserId) return { deleted: 0 };
+    return mutateGenerationLogDb(async (db) => {
+        const removed = db.logs.filter((log) => log.userId === targetUserId);
+        db.logs = db.logs.filter((log) => log.userId !== targetUserId);
         await Promise.all(removed.flatMap((log) => log.assets.flatMap(localAssetUrls).map(deleteLocalAsset)));
         return { deleted: removed.length };
     });
@@ -297,10 +313,11 @@ async function writeDataUrlAsset(dataUrl: string, type: GenerationLogKind): Prom
 }
 
 async function writeRemoteAsset(url: string, type: GenerationLogKind): Promise<GenerationLogAsset | null> {
+    if (!(await isSafeRemoteAssetUrl(url))) return null;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), SERVER_ASSET_DOWNLOAD_TIMEOUT_MS);
     try {
-        const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+        const response = await fetch(url, { cache: "no-store", redirect: "manual", signal: controller.signal });
         if (!response.ok || !response.body) return null;
         const contentLength = Number(response.headers.get("content-length") || 0);
         const maxBytes = maxServerAssetBytes(type);
@@ -314,6 +331,42 @@ async function writeRemoteAsset(url: string, type: GenerationLogKind): Promise<G
     } finally {
         clearTimeout(timer);
     }
+}
+
+async function isSafeRemoteAssetUrl(value: string) {
+    try {
+        const url = new URL(value);
+        if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+        if (url.username || url.password) return false;
+        const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+        return addresses.length > 0 && addresses.every((item) => isPublicIpAddress(item.address));
+    } catch {
+        return false;
+    }
+}
+
+function isPublicIpAddress(address: string) {
+    const version = isIP(address);
+    if (version === 4) {
+        const parts = address.split(".").map((part) => Number(part));
+        if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false;
+        const [a, b] = parts;
+        if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+        if (a === 100 && b >= 64 && b <= 127) return false;
+        if (a === 169 && b === 254) return false;
+        if (a === 172 && b >= 16 && b <= 31) return false;
+        if (a === 192 && (b === 0 || b === 168)) return false;
+        if (a === 198 && (b === 18 || b === 19)) return false;
+        return true;
+    }
+    if (version === 6) {
+        const normalized = address.toLowerCase();
+        if (normalized === "::" || normalized === "::1") return false;
+        if (normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:")) return false;
+        if (normalized.startsWith("::ffff:")) return isPublicIpAddress(normalized.slice("::ffff:".length));
+        return true;
+    }
+    return false;
 }
 
 async function writeAssetBytes(bytes: Buffer, mimeType: string, type: GenerationLogKind): Promise<GenerationLogAsset> {

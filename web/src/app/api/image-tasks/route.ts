@@ -37,6 +37,7 @@ type ImageApiResponse = {
     code?: number;
     msg?: string;
 };
+type ImageTaskResult = { dataUrl: string; remoteUrl?: string };
 
 type GeminiPart = {
     text?: string;
@@ -124,7 +125,8 @@ async function runImageTask(task: ImageTask, origin: string, cookie: string) {
     }, TASK_HEARTBEAT_MS);
     try {
         const result = task.config.apiFormat === "gemini" ? await runGeminiImageTask(task, origin, cookie) : await runOpenAiImageTask(task, origin, cookie);
-        const safeResult = await inlineRemoteImageResult(result.dataUrl, origin, cookie);
+        const resultRemoteUrl = (result as { remoteUrl?: unknown }).remoteUrl;
+        const safeResult = await inlineRemoteImageResult(result.dataUrl, origin, cookie, typeof resultRemoteUrl === "string" ? resultRemoteUrl : undefined);
         const log = await writeImageGenerationLog(task, "success", safeResult, Date.now() - task.createdAt).catch((error) => {
             console.error("Image generation log write failed", error);
             return null;
@@ -188,7 +190,7 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
         formData.set("model", config.model);
         formData.set("prompt", withSystemPrompt(config, task.prompt));
         formData.set("n", "1");
-        formData.set("response_format", "b64_json");
+        formData.set("response_format", "url");
         formData.set("output_format", IMAGE_OUTPUT_FORMAT);
         if (quality) formData.set("quality", quality);
         if (requestSize) formData.set("size", requestSize);
@@ -197,8 +199,8 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
         response = await taskFetch(config, url, { method: "POST", headers, body: formData, cache: "no-store" });
         if (!response.ok) {
             const message = await readFetchError(response, "图片生成失败");
-            if (shouldFallbackToJsonImageEdit(response.status, message)) return runOpenAiJsonImageEditTask(task, url, quality, requestSize, cookie);
-            if (shouldTryNextImageResponseFormat("b64_json", response.status, message)) return runOpenAiImageTaskWithUrlResponse(task, origin, cookie);
+            if (shouldFallbackToJsonImageEdit(response.status, message)) return runOpenAiJsonImageEditTask(task, url, quality, requestSize, cookie, "url");
+            if (shouldTryNextImageResponseFormat("url", response.status, message)) return runOpenAiImageTaskWithBase64Response(task, origin, cookie);
             if (shouldFallbackToResponsesImage(response.status, message)) return runOpenAiResponsesImageTask(task, origin, cookie);
             throw new Error(message);
         }
@@ -213,14 +215,14 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
                 n: 1,
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
-                response_format: "b64_json",
+                response_format: "url",
                 output_format: IMAGE_OUTPUT_FORMAT,
             }),
             cache: "no-store",
         });
         if (!response.ok) {
             const message = await readFetchError(response, "图片生成失败");
-            if (shouldTryNextImageResponseFormat("b64_json", response.status, message)) return runOpenAiImageTaskWithUrlResponse(task, origin, cookie);
+            if (shouldTryNextImageResponseFormat("url", response.status, message)) return runOpenAiImageTaskWithBase64Response(task, origin, cookie);
             if (shouldFallbackToResponsesImage(response.status, message)) return runOpenAiResponsesImageTask(task, origin, cookie);
             throw new Error(message);
         }
@@ -229,7 +231,7 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
     if (!response.ok) throw new Error(await readFetchError(response, "图片生成失败"));
     const payload = (await response.json()) as ImageApiResponse;
     const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-    return { dataUrl: await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url), pointsRemaining: readPointsRemaining(response.headers) };
+    return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
 }
 
 async function runOpenAiJsonImageEditTask(task: ImageTask, url: string, quality: string | undefined, requestSize: string | undefined, cookie: string, responseFormat: (typeof IMAGE_RESPONSE_FORMATS)[number] = "b64_json") {
@@ -257,10 +259,10 @@ async function runOpenAiJsonImageEditTask(task: ImageTask, url: string, quality:
     if (!response.ok) throw new Error(await readFetchError(response, "图片生成失败"));
     const payload = (await response.json()) as ImageApiResponse;
     const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-    return { dataUrl: await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url), pointsRemaining: readPointsRemaining(response.headers) };
+    return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
 }
 
-async function runOpenAiImageTaskWithUrlResponse(task: ImageTask, origin: string, cookie: string) {
+async function runOpenAiImageTaskWithBase64Response(task: ImageTask, origin: string, cookie: string) {
     const config = task.config;
     const quality = normalizeQuality(config.quality || "");
     const requestSize = resolveRequestSize(quality, config.size || "auto");
@@ -273,7 +275,7 @@ async function runOpenAiImageTaskWithUrlResponse(task: ImageTask, origin: string
         formData.set("model", config.model);
         formData.set("prompt", withSystemPrompt(config, task.prompt));
         formData.set("n", "1");
-        formData.set("response_format", "url");
+        formData.set("response_format", "b64_json");
         formData.set("output_format", IMAGE_OUTPUT_FORMAT);
         if (quality) formData.set("quality", quality);
         if (requestSize) formData.set("size", requestSize);
@@ -282,13 +284,13 @@ async function runOpenAiImageTaskWithUrlResponse(task: ImageTask, origin: string
         const response = await taskFetch(config, url, { method: "POST", headers, body: formData, cache: "no-store" });
         if (!response.ok) {
             const message = await readFetchError(response, "图片生成失败");
-            if (shouldFallbackToJsonImageEdit(response.status, message)) return runOpenAiJsonImageEditTask(task, url, quality, requestSize, cookie, "url");
+            if (shouldFallbackToJsonImageEdit(response.status, message)) return runOpenAiJsonImageEditTask(task, url, quality, requestSize, cookie, "b64_json");
             if (shouldFallbackToResponsesImage(response.status, message)) return runOpenAiResponsesImageTask(task, origin, cookie);
             throw new Error(message);
         }
         const payload = (await response.json()) as ImageApiResponse;
         const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-        return { dataUrl: await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url), pointsRemaining: readPointsRemaining(response.headers) };
+        return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
     }
 
     headers.set("content-type", "application/json");
@@ -301,7 +303,7 @@ async function runOpenAiImageTaskWithUrlResponse(task: ImageTask, origin: string
             n: 1,
             ...(quality ? { quality } : {}),
             ...(requestSize ? { size: requestSize } : {}),
-            response_format: "url",
+            response_format: "b64_json",
             output_format: IMAGE_OUTPUT_FORMAT,
         }),
         cache: "no-store",
@@ -313,7 +315,7 @@ async function runOpenAiImageTaskWithUrlResponse(task: ImageTask, origin: string
     }
     const payload = (await response.json()) as ImageApiResponse;
     const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-    return { dataUrl: await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url), pointsRemaining: readPointsRemaining(response.headers) };
+    return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
 }
 
 async function runOpenAiResponsesImageTask(task: ImageTask, origin: string, cookie: string) {
@@ -332,7 +334,7 @@ async function runOpenAiResponsesImageTask(task: ImageTask, origin: string, cook
         }
         const payload = (await response.json()) as ImageApiResponse;
         const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-        return { dataUrl: await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url), pointsRemaining: readPointsRemaining(response.headers) };
+        return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
     }
 
     throw new Error(lastError || "图片生成失败");
@@ -467,7 +469,7 @@ function resolveImageDataUrl(item: Record<string, unknown>, baseUrl?: string) {
     return "";
 }
 
-async function parseImagePayloadOrPoll(config: ImageTaskConfig, payload: ImageApiResponse, mediaBaseUrl: string, cookie: string, pollBaseUrl = mediaBaseUrl) {
+async function parseImagePayloadOrPoll(config: ImageTaskConfig, payload: ImageApiResponse, mediaBaseUrl: string, cookie: string, pollBaseUrl = mediaBaseUrl): Promise<ImageTaskResult> {
     const image = parseImagePayloadCompat(payload, mediaBaseUrl, config);
     if (image) return image;
 
@@ -476,7 +478,7 @@ async function parseImagePayloadOrPoll(config: ImageTaskConfig, payload: ImageAp
     return pollOpenAiImageTask(config, taskId, mediaBaseUrl, pollBaseUrl, cookie, readImagePollUrl(config, payload, mediaBaseUrl, pollBaseUrl));
 }
 
-async function pollOpenAiImageTask(config: ImageTaskConfig, taskId: string, mediaBaseUrl: string, pollBaseUrl: string, cookie: string, explicitPollUrl = "") {
+async function pollOpenAiImageTask(config: ImageTaskConfig, taskId: string, mediaBaseUrl: string, pollBaseUrl: string, cookie: string, explicitPollUrl = ""): Promise<ImageTaskResult> {
     const pollUrls = imageTaskPollUrls(pollBaseUrl, taskId, explicitPollUrl);
     let lastError = "";
     for (let attempt = 0; attempt < IMAGE_TASK_POLL_ATTEMPTS; attempt += 1) {
@@ -502,45 +504,54 @@ async function pollOpenAiImageTask(config: ImageTaskConfig, taskId: string, medi
     throw new Error(lastError || "图片生成超时，请稍后重试");
 }
 
-function parseImagePayloadCompat(payload: ImageApiResponse, baseUrl: string, config: ImageTaskConfig) {
+function parseImagePayloadCompat(payload: ImageApiResponse, baseUrl: string, config: ImageTaskConfig): ImageTaskResult | null {
     const error = readImagePayloadError(payload);
     if (error) throw new Error(error);
     return findImageResult(payload, baseUrl, config);
 }
 
-function findImageResult(value: unknown, baseUrl: string, config: ImageTaskConfig, depth = 0): string {
-    if (!value || depth > 6) return "";
-    if (typeof value === "string") return resolveImageUrlLike(value, baseUrl, config, false) || resolveImageBase64Like(value);
+function findImageResult(value: unknown, baseUrl: string, config: ImageTaskConfig, depth = 0): ImageTaskResult | null {
+    if (!value || depth > 6) return null;
+    if (typeof value === "string") {
+        const url = resolveImageUrlLike(value, baseUrl, config, false);
+        if (url) return url;
+        const dataUrl = resolveImageBase64Like(value);
+        return dataUrl ? { dataUrl } : null;
+    }
     if (Array.isArray(value)) {
         for (const item of value) {
             const image = findImageResult(item, baseUrl, config, depth + 1);
             if (image) return image;
         }
-        return "";
+        return null;
     }
-    if (typeof value !== "object") return "";
+    if (typeof value !== "object") return null;
     const record = value as Record<string, unknown>;
     for (const key of IMAGE_URL_KEYS) {
         const image = resolveImageUrlLike(stringField(record, key), baseUrl, config, true);
         if (image) return image;
     }
     for (const key of IMAGE_BASE64_KEYS) {
-        const image = resolveImageBase64Like(stringField(record, key));
-        if (image) return image;
+        const dataUrl = resolveImageBase64Like(stringField(record, key));
+        if (dataUrl) return { dataUrl };
     }
     for (const key of IMAGE_CONTAINER_KEYS) {
         const image = findImageResult(record[key], baseUrl, config, depth + 1);
         if (image) return image;
     }
-    return "";
+    return null;
 }
 
 function resolveImageUrlLike(value: string, baseUrl: string, config: ImageTaskConfig, fromNamedField: boolean) {
     const mediaUrl = value.trim();
-    if (!mediaUrl) return "";
-    if (/^data:image\//i.test(mediaUrl) || /^blob:/i.test(mediaUrl)) return mediaUrl;
-    if (fromNamedField || isLikelyImageUrl(mediaUrl)) return resolveTaskMediaUrl(config, mediaUrl, baseUrl);
-    return "";
+    if (!mediaUrl) return null;
+    if (/^data:image\//i.test(mediaUrl) || /^blob:/i.test(mediaUrl)) return { dataUrl: mediaUrl };
+    if (fromNamedField || isLikelyImageUrl(mediaUrl)) {
+        const dataUrl = resolveTaskMediaUrl(config, mediaUrl, baseUrl);
+        const remoteUrl = resolveGeneratedMediaUrl(mediaUrl, baseUrl);
+        return { dataUrl, remoteUrl: isRemoteMediaUrl(remoteUrl) ? remoteUrl : undefined };
+    }
+    return null;
 }
 
 function resolveImageBase64Like(value: string) {
@@ -641,11 +652,11 @@ function resolveTaskMediaUrl(config: ImageTaskConfig, value: string, baseUrl: st
     return `${proxyBase}/_media?url=${encodeURIComponent(value)}`;
 }
 
-async function inlineRemoteImageResult(value: string, origin: string, cookie: string) {
+async function inlineRemoteImageResult(value: string, origin: string, cookie: string, remoteFallback?: string) {
     const url = (value || "").trim();
-    if (!url || url.startsWith("data:")) return { dataUrl: url };
+    if (!url || url.startsWith("data:")) return { dataUrl: url, remoteUrl: remoteFallback };
     const mediaSource = resolveProxiedMediaSource(url, origin);
-    const remoteUrl = mediaSource.remoteUrl || (isRemoteMediaUrl(url) && !mediaSource.proxyUrl ? url : undefined);
+    const remoteUrl = mediaSource.remoteUrl || remoteFallback || (isRemoteMediaUrl(url) && !mediaSource.proxyUrl ? url : undefined);
     const fallbackUrl = remoteUrl || mediaSource.proxyUrl;
     const fetchUrl = url.startsWith("/") ? `${origin}${url}` : url;
     if (!isRemoteMediaUrl(fetchUrl)) return { dataUrl: url, remoteUrl: fallbackUrl };
@@ -699,16 +710,17 @@ function shouldFallbackToJsonImageEdit(status: number, message: string) {
 }
 
 function shouldTryNextImageResponseFormat(responseFormat: (typeof IMAGE_RESPONSE_FORMATS)[number], status: number, message: string) {
-    if (responseFormat !== "b64_json") return false;
-    if (status === 400 || status === 422) return /response[_ -]?format|b64|base64|unsupported|not supported|invalid/i.test(message);
+    if (status !== 400 && status !== 422) return false;
+    if (responseFormat === "url") return /response[_ -]?format|url|unsupported|not supported|invalid/i.test(message);
+    if (responseFormat === "b64_json") return /response[_ -]?format|b64|base64|unsupported|not supported|invalid/i.test(message);
     return false;
 }
 
 function shouldFallbackToResponsesImage(status: number, message: string) {
     if (status === 401 || status === 403 || status === 429) return false;
     if (status === 404 || status === 405 || status === 415) return true;
-    if (status === 400 || status === 422) return /images\/generations|images\/edits|endpoint|route|not found|no such|cannot post|unsupported|not supported/i.test(message);
-    return status >= 500 && /images\/generations|images\/edits|endpoint|route|not found|no such|cannot post|unsupported|not supported/i.test(message);
+    if (status === 400 || status === 422) return /images\/generations|images\/edits|endpoint|route|not found|not implemented|no such|cannot post|unsupported|not supported/i.test(message);
+    return status >= 500 && /images\/generations|images\/edits|endpoint|route|not found|not implemented|no such|cannot post|unsupported|not supported/i.test(message);
 }
 
 function stringField(record: Record<string, unknown>, key: string) {
@@ -753,8 +765,8 @@ async function readFetchError(response: Response, fallback: string) {
     const statusText = `${fallback}，状态码 ${response.status}`;
     if (!text) return statusText;
     try {
-        const payload = JSON.parse(text) as { error?: { message?: string }; msg?: string };
-        return payload.msg || payload.error?.message || statusText;
+        const payload = JSON.parse(text) as { error?: { message?: string }; message?: string; msg?: string };
+        return payload.msg || payload.message || payload.error?.message || statusText;
     } catch {
         return text.slice(0, 300) || statusText;
     }

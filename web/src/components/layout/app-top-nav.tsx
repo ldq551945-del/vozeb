@@ -10,7 +10,7 @@ import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
-import { normalizeGenerationConcurrency, useConfigStore, type GenerationConcurrencySettings } from "@/stores/use-config-store";
+import { normalizeGenerationConcurrency, normalizeGenerationPointMultipliers, useConfigStore, type GenerationConcurrencySettings, type GenerationPointMultipliers } from "@/stores/use-config-store";
 import { type LocalUser, useUserStore } from "@/stores/use-user-store";
 
 type PublicSiteSettings = {
@@ -40,11 +40,12 @@ export function AppTopNav() {
 
     useEffect(() => {
         void fetch("/api/auth/session")
-            .then((response) => response.json() as Promise<{ user?: LocalUser | null; settings?: { site?: PublicSiteSettings; modelPointCosts?: Record<string, number>; generationConcurrency?: GenerationConcurrencySettings } }>)
+            .then((response) => response.json() as Promise<{ user?: LocalUser | null; settings?: { site?: PublicSiteSettings; modelPointCosts?: Record<string, number>; generationPointMultipliers?: GenerationPointMultipliers; generationConcurrency?: GenerationConcurrencySettings } }>)
             .then((payload) => {
                 if (payload.settings?.site) setSite(payload.settings.site);
                 if (payload.user) setUser(payload.user);
                 updateConfig("modelPointCosts", payload.settings?.modelPointCosts || {});
+                if (payload.settings?.generationPointMultipliers) updateConfig("generationPointMultipliers", normalizeGenerationPointMultipliers(payload.settings.generationPointMultipliers));
                 if (payload.settings?.generationConcurrency) updateConfig("generationConcurrency", normalizeGenerationConcurrency(payload.settings.generationConcurrency));
             })
             .catch(() => undefined);
@@ -99,7 +100,7 @@ export function AppTopNav() {
                             })}
                         </nav>
 
-                        <div className="app-shell-actions my-auto flex h-9 max-w-[calc(100vw-9rem)] min-w-0 items-center justify-end overflow-x-auto overflow-y-visible whitespace-nowrap sm:max-w-[calc(100vw-12rem)] lg:max-w-none">
+                        <div className="app-shell-actions my-auto flex h-9 max-w-[calc(100vw-9rem)] min-w-0 items-center justify-end overflow-visible whitespace-nowrap sm:max-w-[calc(100vw-12rem)] lg:max-w-none">
                             <UserStatusActions />
                         </div>
                     </div>

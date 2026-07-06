@@ -49,7 +49,14 @@ export type AiConfig = {
     count: string;
     canvasImageCount: string;
     modelPointCosts: Record<string, number>;
+    generationPointMultipliers: GenerationPointMultipliers;
     generationConcurrency: GenerationConcurrencySettings;
+};
+
+export type GenerationPointMultipliers = {
+    imageQuality: Record<string, number>;
+    videoQuality: Record<string, number>;
+    videoSeconds: Record<string, number>;
 };
 
 export type GenerationConcurrencySettings = {
@@ -98,7 +105,7 @@ export const defaultConfig: AiConfig = {
     audioFormat: "mp3",
     audioSpeed: "1",
     audioInstructions: "",
-    videoSeconds: "6",
+    videoSeconds: "5",
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
@@ -113,6 +120,11 @@ export const defaultConfig: AiConfig = {
     count: "1",
     canvasImageCount: "1",
     modelPointCosts: {},
+    generationPointMultipliers: {
+        imageQuality: { auto: 1, low: 1, medium: 1, high: 1 },
+        videoQuality: { "480": 1, "720": 1, "1080": 1 },
+        videoSeconds: { "-1": 1, "5": 1, "10": 1 },
+    },
     generationConcurrency: { image: 4, video: 1 },
 };
 
@@ -267,12 +279,13 @@ export const useConfigStore = create<ConfigStore>()(
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
                         audioInstructions: config.audioInstructions || "",
-                        videoSeconds: config.videoSeconds || "6",
+                        videoSeconds: config.videoSeconds || "5",
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "1",
                         modelPointCosts: isRecord(persistedConfig.modelPointCosts) ? normalizeModelPointCosts(persistedConfig.modelPointCosts) : {},
+                        generationPointMultipliers: normalizeGenerationPointMultipliers(persistedConfig.generationPointMultipliers),
                         generationConcurrency: normalizeGenerationConcurrency(persistedConfig.generationConcurrency),
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
                         videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
@@ -299,9 +312,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizeModelPointCosts(costs: Record<string, unknown>) {
     return Object.fromEntries(
         Object.entries(costs)
-            .map(([model, value]) => [model.trim(), Math.max(0, Number(value) || 0)] as const)
+            .map(([model, value]) => [model.trim(), normalizePointCost(value)] as const)
             .filter(([model]) => Boolean(model)),
     );
+}
+
+function normalizePointCost(value: unknown) {
+    const numberValue = Number(value);
+    if (!Number.isFinite(numberValue) || numberValue < 0) return 0;
+    return Number(numberValue.toFixed(2));
+}
+
+export function normalizeGenerationPointMultipliers(settings?: Partial<GenerationPointMultipliers>) {
+    return {
+        imageQuality: normalizeMultiplierMap(settings?.imageQuality, defaultConfig.generationPointMultipliers.imageQuality),
+        videoQuality: normalizeMultiplierMap(settings?.videoQuality, defaultConfig.generationPointMultipliers.videoQuality),
+        videoSeconds: normalizeMultiplierMap(settings?.videoSeconds, defaultConfig.generationPointMultipliers.videoSeconds),
+    };
+}
+
+function normalizeMultiplierMap(settings: Record<string, unknown> | undefined, defaults: Record<string, number>) {
+    return {
+        ...defaults,
+        ...Object.fromEntries(
+            Object.entries(settings || {})
+                .map(([key, value]) => [key.trim(), normalizePointCost(value)] as const)
+                .filter(([key]) => Boolean(key)),
+        ),
+    };
 }
 
 export function normalizeGenerationConcurrency(settings?: Partial<GenerationConcurrencySettings>) {

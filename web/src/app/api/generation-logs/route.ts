@@ -3,11 +3,36 @@ import { NextResponse } from "next/server";
 import { readJsonBody } from "@/lib/auth/request";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAuthSettings } from "@/lib/auth/store";
-import { recordGenerationLog, type GenerationLogInput } from "@/lib/server/generation-log-store";
+import { deleteGenerationLogs, listGenerationLogs, recordGenerationLog, type GenerationLogInput } from "@/lib/server/generation-log-store";
 import type { GenerationLogAsset } from "@/lib/server/generation-log-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get("page") || 1);
+    const pageSize = Number(url.searchParams.get("pageSize") || 100);
+    const kind = url.searchParams.get("kind") || undefined;
+    const source = url.searchParams.get("source") || undefined;
+    const status = url.searchParams.get("status") || undefined;
+    const keyword = url.searchParams.get("keyword") || undefined;
+    const [result, settings] = await Promise.all([
+        listGenerationLogs({ page, pageSize, kind, source, status, keyword, userId: currentUser.id }),
+        getAuthSettings(),
+    ]);
+
+    return NextResponse.json({
+        ...result,
+        items: result.items.map((log) => ({
+            ...log,
+            assets: log.assets.map((asset) => exposeAssetForUser(asset, settings.generationAssetStorage)),
+        })),
+    });
+}
 
 export async function POST(request: Request) {
     const currentUser = await getCurrentUser();
@@ -27,6 +52,22 @@ export async function POST(request: Request) {
             assets: log.assets.map((asset) => exposeAssetForUser(asset, settings.generationAssetStorage)),
         },
     });
+}
+
+export async function DELETE(request: Request) {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+
+    const body = await readJsonBody<{ ids?: string[] }>(request);
+    const requestedIds = Array.isArray(body.ids) ? Array.from(new Set(body.ids.map((id) => id.trim()).filter(Boolean))) : [];
+    if (!requestedIds.length) return NextResponse.json({ deleted: 0 });
+
+    const userLogs = await listGenerationLogs({ userId: currentUser.id, pageSize: 100 });
+    const allowedIds = new Set(userLogs.items.map((log) => log.id));
+    const deletableIds = requestedIds.filter((id) => allowedIds.has(id));
+    if (!deletableIds.length) return NextResponse.json({ deleted: 0 });
+
+    return NextResponse.json(await deleteGenerationLogs(deletableIds));
 }
 
 function exposeAssetForUser(asset: GenerationLogAsset, settings: Awaited<ReturnType<typeof getAuthSettings>>["generationAssetStorage"]) {
