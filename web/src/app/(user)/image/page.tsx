@@ -1216,9 +1216,13 @@ async function readStoredLogs(userId: string) {
         const ownedValues = values.filter((log) => log.ownerUserId === userId);
         const [localLogs, remoteLogs] = await Promise.all([Promise.all(ownedValues.map(normalizeLog)), readServerImageLogs()]);
         const ownedRemoteLogs = remoteLogs.map((log) => withLogOwner(log, userId));
+        const { logs: visibleLocalLogs, coveredIds } = filterCoveredLocalImageTaskLogs(localLogs, ownedRemoteLogs);
+        if (coveredIds.size) {
+            await Promise.all(Array.from(coveredIds).flatMap((id) => [globalLogStore.removeItem(id).catch(() => undefined), legacyLogStore.removeItem(id).catch(() => undefined)]));
+        }
         const merged = new Map<string, GenerationLog>();
         ownedRemoteLogs.forEach((log) => merged.set(log.id, log));
-        localLogs.forEach((log) => merged.set(log.id, log));
+        visibleLocalLogs.forEach((log) => merged.set(log.id, log));
         const logs = Array.from(merged.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         await Promise.all(logs.filter((log) => !ownedValues.some((item) => item.id === log.id)).map((log) => globalLogStore.setItem(log.id, serializeLog(log)).catch(() => undefined)));
         return logs;
@@ -1234,8 +1238,14 @@ function withLogOwner(log: GenerationLog, userId: string): GenerationLog {
 async function readServerImageLogs() {
     try {
         const payload = await listGenerationLogs({ kind: "image", source: "image-workbench", pageSize: 100 });
-        const aggregateAssetUrls = new Set(payload.items.filter((item) => item.id.startsWith("image-workbench:")).flatMap((item) => item.assets.map(stableAssetUrl).filter(Boolean)));
-        const records = payload.items.filter((item) => item.id.startsWith("image-workbench:") || !item.assets.some((asset) => aggregateAssetUrls.has(stableAssetUrl(asset))));
+        const workbenchLogs = payload.items.filter((item) => item.id.startsWith("image-workbench:"));
+        const primaryWorkbenchLogs = workbenchLogs.filter((item) => !isTaskBackedWorkbenchRecord(item));
+        const aggregateAssetUrls = new Set(workbenchLogs.flatMap((item) => item.assets.map(stableAssetUrl).filter(Boolean)));
+        const records = payload.items.filter((item) => {
+            if (isTaskBackedWorkbenchRecord(item)) return !isDuplicateWorkbenchFallbackLog(item, primaryWorkbenchLogs);
+            if (item.id.startsWith("image-workbench:")) return true;
+            return !item.assets.some((asset) => aggregateAssetUrls.has(stableAssetUrl(asset))) && !isDuplicateServerImageTaskLog(item, workbenchLogs);
+        });
         return Promise.all(records.map(serverImageLogToWorkbenchLog));
     } catch {
         return [];
@@ -1244,6 +1254,101 @@ async function readServerImageLogs() {
 
 function stableAssetUrl(asset: StoredGenerationLogRecord["assets"][number]) {
     return asset.remoteUrl || asset.serverUrl || asset.url || "";
+}
+
+function isTaskBackedWorkbenchRecord(record: StoredGenerationLogRecord) {
+    return record.id.startsWith("image-workbench:image-task-");
+}
+
+function isDuplicateWorkbenchFallbackLog(record: StoredGenerationLogRecord, primaryWorkbenchLogs: StoredGenerationLogRecord[]) {
+    return primaryWorkbenchLogs.some((log) => areRelatedServerImageLogs(record, log));
+}
+
+function isDuplicateServerImageTaskLog(record: StoredGenerationLogRecord, workbenchLogs: StoredGenerationLogRecord[]) {
+    if (!record.id.startsWith("image-task:")) return false;
+    return workbenchLogs.some((log) => areRelatedServerImageLogs(record, log));
+}
+
+function areRelatedServerImageLogs(record: StoredGenerationLogRecord, workbenchLog: StoredGenerationLogRecord) {
+    const sharedTaskId = Boolean(serverRecordTaskId(record) && serverRecordTaskId(record) === serverRecordTaskId(workbenchLog));
+    const sharedAsset = hasSharedServerAsset(record, workbenchLog);
+    if (sharedTaskId || sharedAsset) return true;
+    return hasSameComparableModel(record.model, workbenchLog.model) && hasRelatedRecordText(record, workbenchLog) && isWithinServerLogWindow(record, workbenchLog);
+}
+
+function serverRecordTaskId(record: StoredGenerationLogRecord) {
+    if (record.taskId) return record.taskId;
+    if (record.id.startsWith("image-task:")) return record.id.replace(/^image-task:/, "");
+    if (record.id.startsWith("image-workbench:image-task-")) return record.id.replace(/^image-workbench:image-task-/, "");
+    return "";
+}
+
+function hasSharedServerAsset(record: StoredGenerationLogRecord, workbenchLog: StoredGenerationLogRecord) {
+    const assetUrls = new Set(workbenchLog.assets.map(stableAssetUrl).filter(Boolean));
+    return Boolean(assetUrls.size && record.assets.some((asset) => assetUrls.has(stableAssetUrl(asset))));
+}
+
+function hasSameComparableModel(left: string, right: string) {
+    return Boolean(left && right && comparableModelName(left) === comparableModelName(right));
+}
+
+function hasRelatedRecordText(left: Pick<StoredGenerationLogRecord, "prompt" | "title">, right: Pick<StoredGenerationLogRecord, "prompt" | "title">) {
+    const leftTexts = relatedLogTexts(left);
+    const rightTexts = relatedLogTexts(right);
+    return leftTexts.some((leftText) => rightTexts.some((rightText) => leftText === rightText || leftText.includes(rightText) || rightText.includes(leftText)));
+}
+
+function relatedLogTexts(log: Pick<StoredGenerationLogRecord, "prompt" | "title">) {
+    return [log.prompt, log.title].map((text) => text.trim()).filter((text) => text.length >= 2);
+}
+
+function isWithinServerLogWindow(record: StoredGenerationLogRecord, workbenchLog: StoredGenerationLogRecord) {
+    const recordTime = Date.parse(record.createdAt) || 0;
+    const windowTimes = [workbenchLog.createdAt, workbenchLog.updatedAt, workbenchLog.completedAt].map((time) => (time ? Date.parse(time) : 0)).filter(Boolean);
+    if (!recordTime || !windowTimes.length) return false;
+    const paddingMs = 30 * 60 * 1000;
+    return recordTime >= Math.min(...windowTimes) - paddingMs && recordTime <= Math.max(...windowTimes) + paddingMs;
+}
+
+function filterCoveredLocalImageTaskLogs(localLogs: GenerationLog[], remoteLogs: GenerationLog[]) {
+    const remoteWorkbenchLogs = remoteLogs.filter((log) => !log.id.startsWith("image-task-"));
+    const coveredIds = new Set<string>();
+    const logs = localLogs.filter((log) => {
+        if (!log.id.startsWith("image-task-")) return true;
+        if (!remoteWorkbenchLogs.some((workbenchLog) => isCoveredLocalImageTaskLog(log, workbenchLog))) return true;
+        coveredIds.add(log.id);
+        return false;
+    });
+    return { logs, coveredIds };
+}
+
+function isCoveredLocalImageTaskLog(log: GenerationLog, workbenchLog: GenerationLog) {
+    if (hasSharedLocalAsset(log, workbenchLog)) return true;
+    return hasSameComparableModel(log.model, workbenchLog.model) && hasRelatedLocalLogText(log, workbenchLog) && isWithinLocalWorkbenchWindow(log, workbenchLog);
+}
+
+function hasSharedLocalAsset(log: GenerationLog, workbenchLog: GenerationLog) {
+    const assetUrls = new Set(workbenchLog.images.map(stableResultImageUrl).filter(Boolean));
+    return Boolean(assetUrls.size && log.images.some((image) => assetUrls.has(stableResultImageUrl(image))));
+}
+
+function hasRelatedLocalLogText(left: GenerationLog, right: GenerationLog) {
+    const leftTexts = [left.prompt, left.title].map((text) => text.trim()).filter((text) => text.length >= 2);
+    const rightTexts = [right.prompt, right.title].map((text) => text.trim()).filter((text) => text.length >= 2);
+    return leftTexts.some((leftText) => rightTexts.some((rightText) => leftText === rightText || leftText.includes(rightText) || rightText.includes(leftText)));
+}
+
+function isWithinLocalWorkbenchWindow(log: GenerationLog, workbenchLog: GenerationLog) {
+    const createdAt = log.createdAt || 0;
+    const workbenchCreatedAt = workbenchLog.createdAt || 0;
+    if (!createdAt || !workbenchCreatedAt) return false;
+    return Math.abs(createdAt - workbenchCreatedAt) < 6 * 60 * 60 * 1000;
+}
+
+function comparableModelName(model: string) {
+    const normalized = model.trim();
+    const separator = normalized.indexOf("::");
+    return (separator >= 0 ? normalized.slice(separator + 2) : normalized).trim();
 }
 
 async function deleteServerImageTaskLogsForResults(currentLog: GenerationLog, removedResults: GenerationResult[], nextResults: GenerationResult[]) {

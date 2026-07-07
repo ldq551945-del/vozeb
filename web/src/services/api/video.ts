@@ -187,6 +187,10 @@ async function createCompatibleVideoTask(config: AiConfig, model: string, prompt
                 const response = await axios.post<ApiEnvelope<Record<string, unknown>>>(aiApiUrl(config, path), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
                 syncUserPointsFromHeaders(response.headers, config.apiSource);
                 const created = unwrapEnvelope(response.data, "视频接口没有返回任务") as Record<string, unknown>;
+                if (references.length && readTaskMode(created) === "t2v") {
+                    lastError = "video task was created without accepting reference images";
+                    continue;
+                }
                 const id = readTaskId(created);
                 const immediateUrl = findMediaUrl(created);
                 if (immediateUrl) {
@@ -336,24 +340,45 @@ async function buildCompatibleVideoPayloadVariants(config: AiConfig, model: stri
         watermark: boolConfig(config.videoWatermark, false),
     };
     return mediaPayloads.flatMap((mediaPayload) => [
-        { ...base, ...mediaPayload, seconds: String(duration) },
         { ...base, ...mediaPayload, duration },
         { ...base, ...mediaPayload, seconds: String(duration), duration },
+        { ...base, ...mediaPayload, seconds: String(duration) },
     ]);
 }
 
 function buildCompatibleVideoMediaPayloads(images: string[]) {
     if (!images.length) return [{}];
     const imageObjects = images.map((url) => ({ url }));
+    const imageUrlObjects = images.map((url) => ({ image_url: url }));
     return [
-        { image_url: images[0] },
         { image: images[0] },
+        { images },
+        { image: images[0], images, ref_assets: images },
+        { ref_assets: images },
+        { image: imageObjects[0] },
+        { images: imageObjects },
+        { image: imageObjects[0], images: imageObjects, ref_assets: imageObjects },
+        { ref_assets: imageObjects },
+        { image_url: images[0] },
+        { image_url: imageObjects[0] },
+        { image_urls: images },
+        { image_urls: imageObjects },
         { input_image: images[0] },
         { input_image: imageObjects[0] },
-        { image_url: imageObjects[0] },
-        { image: images[0], images: imageObjects, ref_assets: imageObjects },
-        { image: imageObjects[0], images: imageObjects, ref_assets: imageObjects },
-        { image: images[0], images, ref_assets: images },
+        { input_images: images },
+        { input_images: imageObjects },
+        { input_reference: images },
+        { input_reference: imageObjects },
+        { input_reference: imageUrlObjects },
+        { reference_image: images[0] },
+        { reference_image: imageObjects[0] },
+        { reference_images: images },
+        { reference_images: imageObjects },
+        { first_frame_url: images[0] },
+        { first_frame_image: images[0] },
+        { image: images[0], images: imageObjects, image_urls: images, ref_assets: imageObjects },
+        { image: imageObjects[0], images: imageObjects, image_urls: images, ref_assets: imageObjects },
+        { image: images[0], images, image_urls: images, ref_assets: images },
     ];
 }
 
@@ -433,6 +458,10 @@ function readTaskId(record: Record<string, unknown>) {
 
 function readTaskStatus(record: Record<string, unknown>) {
     return findStringByKeys(record, TASK_STATUS_KEYS).toLowerCase();
+}
+
+function readTaskMode(record: Record<string, unknown>) {
+    return findStringByKeys(record, ["mode", "generation_mode", "generationMode", "task_mode", "taskMode"]).toLowerCase();
 }
 
 function isCompletedStatus(status: string) {

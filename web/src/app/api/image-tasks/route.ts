@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAuthSettings } from "@/lib/auth/store";
+import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
 import { fetchInternalApi, isInternalApiBaseUrl, resolveInternalOrigin } from "@/lib/server/internal-origin";
 import { resolveGeneratedMediaUrl } from "@/lib/media-url";
@@ -38,6 +39,7 @@ type ImageApiResponse = {
     msg?: string;
 };
 type ImageTaskResult = { dataUrl: string; remoteUrl?: string };
+type ImageTaskRunResult = ImageTaskResult & { pointsRemaining?: number };
 
 type GeminiPart = {
     text?: string;
@@ -149,7 +151,8 @@ async function runImageTask(task: ImageTask, origin: string, cookie: string) {
     try {
         const result = task.config.apiFormat === "gemini" ? await runGeminiImageTask(task, origin, cookie) : await runOpenAiImageTask(task, origin, cookie);
         const resultRemoteUrl = (result as { remoteUrl?: unknown }).remoteUrl;
-        const safeResult = await inlineRemoteImageResult(result.dataUrl, origin, cookie, typeof resultRemoteUrl === "string" ? resultRemoteUrl : undefined);
+        const safeResult =
+            directRemoteImageResult(result.dataUrl, typeof resultRemoteUrl === "string" ? resultRemoteUrl : undefined) || (await inlineRemoteImageResult(result.dataUrl, origin, cookie, typeof resultRemoteUrl === "string" ? resultRemoteUrl : undefined));
         const log = await writeImageGenerationLog(task, "success", safeResult, Date.now() - task.createdAt).catch((error) => {
             console.error("Image generation log write failed", error);
             return null;
@@ -199,13 +202,16 @@ async function writeImageGenerationLog(task: ImageTask, status: "success" | "fai
     });
 }
 
-async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: string) {
+async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: string): Promise<ImageTaskRunResult> {
     const config = task.config;
     const quality = normalizeQuality(config.quality || "");
     const requestSize = resolveRequestSize(quality, config.size || "auto");
     const path = task.kind === "edit" ? "/images/edits" : "/images/generations";
     const url = taskUrl(config, path, origin);
     const headers = taskHeaders(config, cookie);
+    const responseFormat = await preferredImageResponseFormat(config);
+    const useJsonImageEdit = task.kind === "edit";
+    if (useJsonImageEdit) return runOpenAiJsonImageEditTask(task, url, origin, quality, requestSize, cookie, responseFormat);
     let response: Response;
 
     if (task.kind === "edit") {
@@ -234,14 +240,14 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
                 n: 1,
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
-                response_format: "url",
+                response_format: responseFormat,
                 output_format: IMAGE_OUTPUT_FORMAT,
             }),
             cache: "no-store",
         });
         if (!response.ok) {
             const message = await readFetchError(response, "图片生成失败");
-            if (shouldTryNextImageResponseFormat("url", response.status, message)) return runOpenAiImageTaskWithBase64Response(task, origin, cookie);
+            if (shouldTryNextImageResponseFormat(responseFormat, response.status, message)) return runOpenAiImageTaskWithBase64Response(task, origin, cookie);
             if (shouldFallbackToResponsesImage(response.status, message)) return runOpenAiResponsesImageTask(task, origin, cookie);
             throw new Error(message);
         }
@@ -250,10 +256,20 @@ async function runOpenAiImageTask(task: ImageTask, origin: string, cookie: strin
     if (!response.ok) throw new Error(await readFetchError(response, "图片生成失败"));
     const payload = (await response.json()) as ImageApiResponse;
     const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-    return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
+    const result = await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url);
+    if (responseFormat === "url" && shouldRetryInternalImageUrlAsBase64(result)) return runOpenAiImageTaskWithBase64Response(task, origin, cookie);
+    return { ...result, pointsRemaining: readPointsRemaining(response.headers) };
 }
 
-async function runOpenAiJsonImageEditTask(task: ImageTask, url: string, origin: string, quality: string | undefined, requestSize: string | undefined, cookie: string, responseFormat: (typeof IMAGE_RESPONSE_FORMATS)[number] = "b64_json") {
+async function runOpenAiJsonImageEditTask(
+    task: ImageTask,
+    url: string,
+    origin: string,
+    quality: string | undefined,
+    requestSize: string | undefined,
+    cookie: string,
+    responseFormat: (typeof IMAGE_RESPONSE_FORMATS)[number] = "b64_json",
+): Promise<ImageTaskRunResult> {
     const config = task.config;
     const headers = taskHeaders(config, cookie);
     headers.set("content-type", "application/json");
@@ -273,7 +289,9 @@ async function runOpenAiJsonImageEditTask(task: ImageTask, url: string, origin: 
         }
         const payload = (await response.json()) as ImageApiResponse;
         const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-        return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
+        const result = await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url);
+        if (responseFormat === "url" && shouldRetryInternalImageUrlAsBase64(result)) return runOpenAiJsonImageEditTask(task, url, origin, quality, requestSize, cookie, "b64_json");
+        return { ...result, pointsRemaining: readPointsRemaining(response.headers) };
     }
     if (shouldTryNextImageResponseFormat(responseFormat, 400, lastMessage)) {
         if (responseFormat === "url") return runOpenAiJsonImageEditTask(task, url, origin, quality, requestSize, cookie, "b64_json");
@@ -282,7 +300,7 @@ async function runOpenAiJsonImageEditTask(task: ImageTask, url: string, origin: 
     throw new Error(lastMessage || "图片生成失败");
 }
 
-async function runOpenAiImageTaskWithBase64Response(task: ImageTask, origin: string, cookie: string) {
+async function runOpenAiImageTaskWithBase64Response(task: ImageTask, origin: string, cookie: string): Promise<ImageTaskRunResult> {
     const config = task.config;
     const quality = normalizeQuality(config.quality || "");
     const requestSize = resolveRequestSize(quality, config.size || "auto");
@@ -306,7 +324,8 @@ async function runOpenAiImageTaskWithBase64Response(task: ImageTask, origin: str
         }
         const payload = (await response.json()) as ImageApiResponse;
         const resultBaseUrl = response.headers.get("x-vozeb-upstream-url") || url;
-        return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
+        const result = await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url);
+        return { ...result, pointsRemaining: readPointsRemaining(response.headers) };
     }
 
     headers.set("content-type", "application/json");
@@ -334,7 +353,7 @@ async function runOpenAiImageTaskWithBase64Response(task: ImageTask, origin: str
     return { ...(await parseImagePayloadOrPoll(config, payload, resultBaseUrl, cookie, url)), pointsRemaining: readPointsRemaining(response.headers) };
 }
 
-async function runOpenAiResponsesImageTask(task: ImageTask, origin: string, cookie: string) {
+async function runOpenAiResponsesImageTask(task: ImageTask, origin: string, cookie: string): Promise<ImageTaskRunResult> {
     const config = task.config;
     const url = taskUrl(config, "/responses", origin);
     const headers = taskHeaders(config, cookie);
@@ -357,7 +376,7 @@ async function runOpenAiResponsesImageTask(task: ImageTask, origin: string, cook
 }
 
 function buildResponsesImageBodies(task: ImageTask, origin: string) {
-    const prompt = withSystemPrompt(task.config, task.prompt);
+    const prompt = withSystemPrompt(task.config, buildImageReferencePromptText(task.prompt, task.references));
     const imageContent = task.references.map((reference) => ({ type: "input_image", image_url: referenceRequestUrl(reference, origin) }));
     const content = [{ type: "input_text", text: prompt }, ...imageContent];
     return [
@@ -385,9 +404,10 @@ function buildResponsesImageBodies(task: ImageTask, origin: string) {
 function buildJsonImageEditBodies(task: ImageTask, quality: string | undefined, requestSize: string | undefined, responseFormat: (typeof IMAGE_RESPONSE_FORMATS)[number], origin: string) {
     const images = task.references.map((reference) => referenceRequestUrl(reference, origin)).filter(Boolean);
     const mask = task.mask ? referenceRequestUrl(task.mask, origin) : "";
+    const prompt = buildImageReferencePromptText(task.prompt, task.references);
     const base = {
         model: task.config.model,
-        prompt: withSystemPrompt(task.config, task.prompt),
+        prompt: withSystemPrompt(task.config, prompt),
         n: 1,
         ...(quality ? { quality } : {}),
         ...(requestSize ? { size: requestSize } : {}),
@@ -397,12 +417,13 @@ function buildJsonImageEditBodies(task: ImageTask, quality: string | undefined, 
     };
     if (!images.length) return [base];
     const first = images[0];
+    const imageObjects = images.map((item) => ({ url: item }));
     return [
-        { ...base, ...(images.length === 1 ? { image: first } : {}), images },
+        { ...base, ...(images.length === 1 ? { image: first } : {}), images, ref_assets: images, image_urls: images },
         { ...base, image_url: first },
         { ...base, input_image: first },
         { ...base, image: first },
-        { ...base, images: images.map((item) => ({ url: item })) },
+        { ...base, images: imageObjects, ref_assets: imageObjects, image_urls: imageObjects },
     ];
 }
 
@@ -428,10 +449,10 @@ function normalizeReferenceRequestUrl(value: string, origin: string) {
     return url;
 }
 
-async function runGeminiImageTask(task: ImageTask, origin: string, cookie: string) {
+async function runGeminiImageTask(task: ImageTask, origin: string, cookie: string): Promise<ImageTaskRunResult> {
     if (task.mask) throw new Error("Gemini 暂不支持蒙版编辑");
     const config = task.config;
-    const parts: GeminiPart[] = [{ text: withSystemPrompt(config, task.prompt) }];
+    const parts: GeminiPart[] = [{ text: withSystemPrompt(config, buildImageReferencePromptText(task.prompt, task.references)) }];
     task.references.forEach((reference) => parts.push(toGeminiImagePart(referenceRequestUrl(reference, origin), reference.type)));
     const response = await taskFetch(config, `${geminiApiUrl(config, "generateContent", origin)}`, {
         method: "POST",
@@ -475,6 +496,37 @@ function rawModelName(value: string) {
     const model = value.trim();
     const separator = model.indexOf("::");
     return separator >= 0 ? model.slice(separator + 2).trim() : model;
+}
+
+async function preferredImageResponseFormat(config: ImageTaskConfig): Promise<(typeof IMAGE_RESPONSE_FORMATS)[number]> {
+    const apiBase = await resolveConfiguredApiBaseUrl(config.baseUrl).catch(() => config.baseUrl);
+    return isQingyanApiBase(apiBase) ? "b64_json" : "url";
+}
+
+async function resolveConfiguredApiBaseUrl(baseUrl: string) {
+    const systemChannelId = readSystemChannelId(baseUrl);
+    if (!systemChannelId) return baseUrl;
+    const settings = await getAuthSettings();
+    return settings.systemChannels.find((channel) => channel.id === systemChannelId)?.baseUrl || baseUrl;
+}
+
+function readSystemChannelId(baseUrl: string) {
+    try {
+        const parsed = new URL(baseUrl, "http://localhost");
+        const match = parsed.pathname.match(/^\/api\/ai\/system\/([^/]+)/);
+        return match?.[1] ? decodeURIComponent(match[1]) : "";
+    } catch {
+        return "";
+    }
+}
+
+function isQingyanApiBase(baseUrl: string) {
+    try {
+        const host = new URL(baseUrl).hostname.toLowerCase();
+        return host === "api2.qingyanzhiying.top";
+    } catch {
+        return false;
+    }
 }
 
 function taskUrl(config: ImageTaskConfig, path: string, origin: string) {
@@ -604,13 +656,13 @@ function findImageResult(value: unknown, baseUrl: string, config: ImageTaskConfi
     }
     if (typeof value !== "object") return null;
     const record = value as Record<string, unknown>;
-    for (const key of IMAGE_URL_KEYS) {
-        const image = resolveImageUrlLike(stringField(record, key), baseUrl, config, true);
-        if (image) return image;
-    }
     for (const key of IMAGE_BASE64_KEYS) {
         const dataUrl = resolveImageBase64Like(stringField(record, key));
         if (dataUrl) return { dataUrl };
+    }
+    for (const key of IMAGE_URL_KEYS) {
+        const image = resolveImageUrlLike(stringField(record, key), baseUrl, config, true);
+        if (image) return image;
     }
     for (const key of IMAGE_CONTAINER_KEYS) {
         const image = findImageResult(record[key], baseUrl, config, depth + 1);
@@ -719,7 +771,11 @@ function isPendingImageStatus(status?: string) {
 
 function imageTaskPollUrls(requestUrl: string, taskId: string, explicitPollUrl = "") {
     const cleanUrl = requestUrl.split("?")[0].replace(/\/+$/, "");
-    return Array.from(new Set([explicitPollUrl, `${cleanUrl}/${encodeURIComponent(taskId)}`].filter(Boolean)));
+    const encodedTaskId = encodeURIComponent(taskId);
+    const pollUrls = [explicitPollUrl, `${cleanUrl}/${encodedTaskId}`];
+    const generationsUrl = cleanUrl.replace(/\/images\/(?:generations|edits)$/i, "/images/generations");
+    if (generationsUrl !== cleanUrl) pollUrls.push(`${generationsUrl}/${encodedTaskId}`);
+    return Array.from(new Set(pollUrls.filter(Boolean)));
 }
 
 function resolveTaskMediaUrl(config: ImageTaskConfig, value: string, baseUrl: string) {
@@ -727,6 +783,21 @@ function resolveTaskMediaUrl(config: ImageTaskConfig, value: string, baseUrl: st
     if (!config.baseUrl.startsWith("/api/ai/system/")) return resolveGeneratedMediaUrl(value, baseUrl);
     const proxyBase = config.baseUrl.trim().replace(/\/+$/, "");
     return `${proxyBase}/_media?url=${encodeURIComponent(value)}`;
+}
+
+function shouldRetryInternalImageUrlAsBase64(result: ImageTaskResult) {
+    return isInternalGeneratedImageUrl(result.remoteUrl || "") || isInternalGeneratedImageUrl(result.dataUrl || "");
+}
+
+function isInternalGeneratedImageUrl(value: string) {
+    const url = value.trim();
+    if (!/^https?:\/\//i.test(url)) return false;
+    try {
+        const host = new URL(url).hostname.toLowerCase();
+        return !host.includes(".") || host.endsWith(".internal") || host.endsWith(".local");
+    } catch {
+        return false;
+    }
 }
 
 async function inlineRemoteImageResult(value: string, origin: string, cookie: string, remoteFallback?: string) {
@@ -759,6 +830,12 @@ async function inlineRemoteImageResult(value: string, origin: string, cookie: st
     } finally {
         clearTimeout(timer);
     }
+}
+
+function directRemoteImageResult(value: string, remoteUrl?: string) {
+    const fallback = (remoteUrl || "").trim();
+    if (!isRemoteMediaUrl(fallback) || isInternalGeneratedImageUrl(fallback)) return null;
+    return { dataUrl: fallback, remoteUrl: fallback };
 }
 
 function resolveProxiedMediaSource(value: string, origin: string) {
@@ -838,7 +915,7 @@ function toGeminiImagePart(dataUrl: string, fallbackType?: string): GeminiPart {
 async function buildImageEditFormData(task: ImageTask, quality: string | undefined, requestSize: string | undefined, origin: string, cookie: string, responseFormat: (typeof IMAGE_RESPONSE_FORMATS)[number]) {
     const formData = new FormData();
     formData.set("model", task.config.model);
-    formData.set("prompt", withSystemPrompt(task.config, task.prompt));
+    formData.set("prompt", withSystemPrompt(task.config, buildImageReferencePromptText(task.prompt, task.references)));
     formData.set("n", "1");
     formData.set("response_format", responseFormat);
     formData.set("output_format", IMAGE_OUTPUT_FORMAT);

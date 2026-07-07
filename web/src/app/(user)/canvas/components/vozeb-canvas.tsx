@@ -20,6 +20,7 @@ type VozebCanvasProps = {
 
 export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", onViewportChange, onCanvasMouseDown, onCanvasDeselect, onContextMenu, onDrop, children }: VozebCanvasProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const viewportRef = useRef(viewport);
     const panState = useRef({
         isPanning: false,
         startX: 0,
@@ -28,14 +29,23 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
         initialY: 0,
         hasMoved: false,
     });
+    const touchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
+    const pinchStateRef = useRef<{
+        active: boolean;
+        startDistance: number;
+        startScale: number;
+        worldX: number;
+        worldY: number;
+    }>({ active: false, startDistance: 0, startScale: viewport.k, worldX: 0, worldY: 0 });
     const scaleRef = useRef(viewport.k);
     const frameRef = useRef<number | null>(null);
     const nextViewportRef = useRef<ViewportTransform | null>(null);
     const [isSpacePressed, setIsSpacePressed] = useState(false);
 
     useEffect(() => {
+        viewportRef.current = viewport;
         scaleRef.current = viewport.k;
-    }, [viewport.k]);
+    }, [viewport]);
 
     useEffect(
         () => () => {
@@ -85,11 +95,71 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
         });
     };
 
+    const updateTouchPointer = (event: Pick<PointerEvent | React.PointerEvent, "pointerId" | "clientX" | "clientY">) => {
+        if (!touchPointersRef.current.has(event.pointerId)) return;
+        touchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+    };
+
+    const readTouchPair = () => Array.from(touchPointersRef.current.values()).slice(0, 2);
+
+    const startPinchZoom = () => {
+        const [first, second] = readTouchPair();
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!first || !second || !rect) return;
+        const midpoint = midpointOf(first, second);
+        const localX = midpoint.clientX - rect.left;
+        const localY = midpoint.clientY - rect.top;
+        const current = viewportRef.current;
+        pinchStateRef.current = {
+            active: true,
+            startDistance: distanceBetween(first, second),
+            startScale: current.k,
+            worldX: (localX - current.x) / current.k,
+            worldY: (localY - current.y) / current.k,
+        };
+        panState.current.isPanning = false;
+        document.body.style.cursor = "default";
+    };
+
+    const updatePinchZoom = (event: PointerEvent) => {
+        updateTouchPointer(event);
+        if (!pinchStateRef.current.active || touchPointersRef.current.size < 2) return false;
+        const [first, second] = readTouchPair();
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!first || !second || !rect) return false;
+        event.preventDefault();
+        const midpoint = midpointOf(first, second);
+        const distance = Math.max(1, distanceBetween(first, second));
+        const startDistance = Math.max(1, pinchStateRef.current.startDistance);
+        const newScale = Math.min(Math.max(pinchStateRef.current.startScale * (distance / startDistance), 0.05), 5);
+        const localX = midpoint.clientX - rect.left;
+        const localY = midpoint.clientY - rect.top;
+        const next = {
+            x: localX - pinchStateRef.current.worldX * newScale,
+            y: localY - pinchStateRef.current.worldY * newScale,
+            k: newScale,
+        };
+        scaleRef.current = newScale;
+        viewportRef.current = next;
+        onViewportChange(next);
+        return true;
+    };
+
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest("[data-canvas-no-zoom]")) return;
         if (target?.closest("[data-connection-create-menu]")) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
+
+        if (event.pointerType === "touch") {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            touchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
+            if (touchPointersRef.current.size >= 2) {
+                event.preventDefault();
+                startPinchZoom();
+                return;
+            }
+        }
 
         if (event.button === 0 && (event.ctrlKey || event.metaKey) && isBackgroundClick) {
             event.preventDefault();
@@ -120,6 +190,7 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
 
     useEffect(() => {
         const handlePointerMove = (event: PointerEvent) => {
+            if (event.pointerType === "touch" && updatePinchZoom(event)) return;
             if (!panState.current.isPanning) return;
 
             const dx = event.clientX - panState.current.startX;
@@ -140,7 +211,11 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
             });
         };
 
-        const handlePointerUp = () => {
+        const handlePointerUp = (event: PointerEvent) => {
+            if (event.pointerType === "touch") {
+                touchPointersRef.current.delete(event.pointerId);
+                if (touchPointersRef.current.size < 2) pinchStateRef.current.active = false;
+            }
             if (!panState.current.isPanning) return;
 
             if (!panState.current.hasMoved) {
@@ -152,9 +227,11 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
 
         window.addEventListener("pointermove", handlePointerMove);
         window.addEventListener("pointerup", handlePointerUp);
+        window.addEventListener("pointercancel", handlePointerUp);
         return () => {
             window.removeEventListener("pointermove", handlePointerMove);
             window.removeEventListener("pointerup", handlePointerUp);
+            window.removeEventListener("pointercancel", handlePointerUp);
         };
     }, [onCanvasDeselect, onViewportChange]);
 
@@ -171,7 +248,7 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
         <div
             ref={containerRef}
             className="canvas-surface relative h-full w-full cursor-grab select-none overflow-hidden"
-            style={{ background: theme.canvas.background }}
+            style={{ background: theme.canvas.background, touchAction: "none", overscrollBehavior: "none" }}
             onPointerDown={handlePointerDown}
             onWheel={handleWheel}
             onContextMenu={onContextMenu}
@@ -189,6 +266,14 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
             </div>
         </div>
     );
+}
+
+function distanceBetween(first: { clientX: number; clientY: number }, second: { clientX: number; clientY: number }) {
+    return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+}
+
+function midpointOf(first: { clientX: number; clientY: number }, second: { clientX: number; clientY: number }) {
+    return { clientX: (first.clientX + second.clientX) / 2, clientY: (first.clientY + second.clientY) / 2 };
 }
 
 function CanvasGrid({ viewport, mode }: { viewport: ViewportTransform; mode: CanvasBackgroundMode }) {

@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import { saveAs } from "file-saver";
 
 import type { InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
+import { AudioSettingsPanel } from "@/components/audio-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
 import { formatCreditAmount, requestCreditCost } from "@/constant/credits";
 import { VideoSettingsPanel, normalizeVideoResolutionValue, normalizeVideoSizeValue, videoSizeLabel } from "@/components/video-settings-panel";
@@ -41,6 +42,11 @@ type GeneratedVideo = {
     mimeType: string;
 };
 
+type GenerationFailure = {
+    resultId: string;
+    error: string;
+};
+
 type GenerationResult = {
     id: string;
     status: "pending" | "success" | "failed";
@@ -66,7 +72,11 @@ type GenerationLog = {
     seconds: string;
     status: "生成中" | "成功" | "失败";
     task?: VideoGenerationTask;
+    taskStartedAt?: number;
+    taskResultId?: string;
     video?: GeneratedVideo;
+    videos?: GeneratedVideo[];
+    failures?: GenerationFailure[];
     error?: string;
     resultDeleted?: boolean;
 };
@@ -278,37 +288,30 @@ export default function VideoPage() {
             message.warning("当前用户视频生成已达到并发上限，请稍后再试");
             return;
         }
+        const existingLog = previewLog ? getLatestLog(previewLog.id) || previewLog : null;
+        const baseResults = existingLog ? resultsFromLog(existingLog).filter((result) => result.status !== "pending") : [];
+        const pendingResultId = nanoid();
+        const startedResults = [...baseResults, { id: pendingResultId, status: "pending" as const }];
         beginStartingVideoTask();
-        setPreviewLog(null);
         setSelectedResultIds([]);
-        setResults([{ id: nanoid(), status: "pending" }]);
+        setResults(startedResults);
         const batchStartedAt = performance.now();
         try {
             const task = await createVideoGenerationTask(snapshot.config, snapshot.text, snapshot.references, snapshot.videoReferences, snapshot.audioReferences);
-            const log = buildLog({ prompt: snapshot.text, model, config: snapshot.config, references: snapshot.references, videoReferences: snapshot.videoReferences, audioReferences: snapshot.audioReferences, durationMs: 0, status: "生成中", task });
+            const log = buildLogFromVideoResults(existingLog, snapshot, startedResults, existingLog?.durationMs || 0, undefined, { task, taskResultId: pendingResultId });
             activeLogIdRef.current = log.id;
             setPreviewLog(log);
-            setResults([{ id: log.id, status: "pending" }]);
             await saveLog(log, { refresh: false });
             finishStartingVideoTask();
             scheduleVideoLog(log, snapshot.config);
         } catch (error) {
             finishStartingVideoTask();
             const errorMessage = error instanceof Error ? error.message : "生成失败";
-            const failedLog = buildLog({
-                prompt: snapshot.text,
-                model,
-                config: snapshot.config,
-                references: snapshot.references,
-                videoReferences: snapshot.videoReferences,
-                audioReferences: snapshot.audioReferences,
-                durationMs: performance.now() - batchStartedAt,
-                status: "失败",
-                error: errorMessage,
-            });
+            const failedResults = startedResults.map((result) => (result.id === pendingResultId ? { id: pendingResultId, status: "failed" as const, error: errorMessage } : result));
+            const failedLog = buildLogFromVideoResults(existingLog, snapshot, failedResults, (existingLog?.durationMs || 0) + performance.now() - batchStartedAt, errorMessage);
             activeLogIdRef.current = failedLog.id;
             setPreviewLog(failedLog);
-            setResults([{ id: failedLog.id, status: "failed", error: errorMessage }]);
+            setResults(failedResults);
             await saveLog(failedLog);
             void recordVideoGenerationLog(failedLog);
             message.error(errorMessage);
@@ -511,9 +514,11 @@ export default function VideoPage() {
         if (!activeLogIdRef.current) activeLogIdRef.current = log.id;
         if (activeLogIdRef.current === log.id) {
             setPreviewLog(log);
-            setResults((value) => (value.length ? value : [{ id: log.id, status: "pending" }]));
+            setResults((value) => (value.length ? value : resultsFromLog(log)));
         }
         const taskConfig = buildVideoConfig({ ...effectiveConfig, ...log.config }, log.task.model || log.model);
+        const resultId = log.taskResultId || log.id;
+        const snapshot = snapshotFromLog(log, taskConfig);
         try {
             for (let attempt = 0; attempt < 120; attempt += 1) {
                 if (deletedResultLogIdsRef.current.has(log.id)) return;
@@ -531,21 +536,18 @@ export default function VideoPage() {
                         remoteUrl: stored.remoteUrl,
                         serverUrl: stored.serverUrl,
                         storageKey: stored.storageKey,
-                        durationMs: Date.now() - log.createdAt,
+                        durationMs: Date.now() - (log.taskStartedAt || log.createdAt),
                         width: stored.width || 1280,
                         height: stored.height || 720,
                         bytes: stored.bytes,
                         mimeType: stored.mimeType,
                     };
-                    const nextLog = { ...(getLatestLog(log.id) || log), status: "成功" as const, durationMs: nextVideo.durationMs, video: nextVideo, task: undefined, error: undefined, resultDeleted: false };
-                    if (activeLogIdRef.current === log.id) setResults([{ id: nextVideo.id, status: "success", video: nextVideo }]);
+                    const latestLog = getLatestLog(log.id) || log;
+                    const nextResults = replaceResult(resultsFromLog(latestLog), resultId, { id: nextVideo.id, status: "success", video: nextVideo });
+                    const nextLog = buildLogFromVideoResults(latestLog, snapshot, nextResults, (latestLog.durationMs || 0) + nextVideo.durationMs);
+                    if (activeLogIdRef.current === log.id) setResults(nextResults);
                     await saveLog(nextLog);
-                    void recordVideoGenerationLog(nextLog).then((asset) => {
-                        if (!asset || deletedResultLogIdsRef.current.has(log.id)) return;
-                        const latest = getLatestLog(log.id) || nextLog;
-                        if (!latest.video) return;
-                        void saveLog({ ...latest, video: { ...latest.video, remoteUrl: asset.remoteUrl || latest.video.remoteUrl, serverUrl: asset.serverUrl || latest.video.serverUrl } }, { refresh: false });
-                    });
+                    void recordVideoGenerationLog(nextLog);
                     message.success("视频已生成");
                     return;
                 }
@@ -556,8 +558,10 @@ export default function VideoPage() {
         } catch (error) {
             if (deletedResultLogIdsRef.current.has(log.id)) return;
             const errorMessage = error instanceof Error ? error.message : "生成失败";
-            const nextLog = { ...(getLatestLog(log.id) || log), status: "失败" as const, durationMs: Date.now() - log.createdAt, task: undefined, error: errorMessage, resultDeleted: false };
-            if (activeLogIdRef.current === log.id) setResults([{ id: log.id, status: "failed", error: errorMessage }]);
+            const latestLog = getLatestLog(log.id) || log;
+            const nextResults = replaceResult(resultsFromLog(latestLog), resultId, { id: resultId, status: "failed", error: errorMessage });
+            const nextLog = buildLogFromVideoResults(latestLog, snapshot, nextResults, (latestLog.durationMs || 0) + Date.now() - (log.taskStartedAt || log.createdAt), errorMessage);
+            if (activeLogIdRef.current === log.id) setResults(nextResults);
             await saveLog(nextLog);
             void recordVideoGenerationLog(nextLog);
             message.error(errorMessage);
@@ -608,14 +612,18 @@ export default function VideoPage() {
         deletedResultLogIdsRef.current.add(currentLog.id);
         removeQueuedVideoLog(currentLog.id);
         activeLogIdsRef.current.delete(currentLog.id);
-        const keptVideo = nextResults.find((result) => result.status === "success" && result.video)?.video;
+        const keptVideos = nextResults.flatMap((result) => (result.status === "success" && result.video ? [result.video] : []));
+        const keptVideo = keptVideos[keptVideos.length - 1];
         const failedResult = nextResults.find((result) => result.status === "failed");
         const pendingResult = nextResults.find((result) => result.status === "pending");
         const nextLog: GenerationLog = {
             ...currentLog,
             status: pendingResult ? "生成中" : keptVideo ? "成功" : failedResult ? "失败" : currentLog.status === "生成中" ? "失败" : currentLog.status,
             task: pendingResult ? currentLog.task : undefined,
+            taskResultId: pendingResult ? currentLog.taskResultId : undefined,
             video: keptVideo,
+            videos: keptVideos,
+            failures: nextResults.flatMap((result) => (result.status === "failed" ? [{ resultId: result.id, error: result.error || "????" }] : [])),
             error: failedResult?.error,
             resultDeleted: !nextResults.length,
         };
@@ -908,6 +916,9 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
             </label>
             <div className="col-span-2">
                 <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
+            </div>
+            <div className="col-span-2">
+                <AudioSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle className="space-y-4" />
             </div>
         </>
     );
@@ -1216,23 +1227,24 @@ async function readServerVideoLogs() {
 
 async function serverVideoLogToWorkbenchLog(record: StoredGenerationLogRecord): Promise<GenerationLog> {
     const createdAt = Date.parse(record.createdAt) || Date.now();
-    const asset = record.assets[0];
-    const url = asset ? browserReadableMediaUrl(asset.remoteUrl || asset.serverUrl || asset.url || "") : "";
-    const video: GeneratedVideo | undefined =
-        asset && url
-            ? {
-                  id: serverVideoLogId(record),
-                  url,
-                  remoteUrl: asset.remoteUrl,
-                  serverUrl: asset.serverUrl,
-                  storageKey: "",
-                  durationMs: record.durationMs || 0,
-                  width: asset.width || 0,
-                  height: asset.height || 0,
-                  bytes: asset.bytes || 0,
-                  mimeType: asset.mimeType || "video/mp4",
-              }
-            : undefined;
+    const videos: GeneratedVideo[] = record.assets.flatMap((asset, index) => {
+        const url = browserReadableMediaUrl(asset.remoteUrl || asset.serverUrl || asset.url || "");
+        if (!url) return [];
+        return [
+            {
+                id: `${serverVideoLogId(record)}:${index}`,
+                url,
+                remoteUrl: asset.remoteUrl,
+                serverUrl: asset.serverUrl,
+                storageKey: "",
+                durationMs: record.durationMs || 0,
+                width: asset.width || 0,
+                height: asset.height || 0,
+                bytes: asset.bytes || 0,
+                mimeType: asset.mimeType || "video/mp4",
+            },
+        ];
+    });
     return normalizeLog({
         id: serverVideoLogId(record),
         createdAt,
@@ -1248,20 +1260,36 @@ async function serverVideoLogToWorkbenchLog(record: StoredGenerationLogRecord): 
         size: "",
         resolution: "",
         seconds: "",
-        status: record.status === "pending" ? "生成中" : record.status === "failed" ? "失败" : "成功",
-        video,
+        status: record.status === "pending" ? "\u751f\u6210\u4e2d" : record.status === "failed" ? "\u5931\u8d25" : "\u6210\u529f",
+        video: videos[videos.length - 1],
+        videos,
+        failures: record.status === "failed" ? [{ resultId: serverVideoLogId(record), error: record.error || "\u751f\u6210\u5931\u8d25" }] : [],
         error: record.error,
-        resultDeleted: !video && record.status === "success",
+        resultDeleted: !videos.length && record.status === "success",
     });
 }
-
 function serverVideoLogId(record: StoredGenerationLogRecord) {
     return record.id.replace(/^video-workbench:/, "");
 }
 
 async function recordVideoGenerationLog(log: GenerationLog) {
-    const video = log.video;
-    const assetUrl = video?.remoteUrl || video?.serverUrl || (video?.url && !video.url.startsWith("blob:") ? video.url : "");
+    const videos = log.videos?.length ? log.videos : log.video ? [log.video] : [];
+    const assets = videos.flatMap((video) => {
+        const assetUrl = video.remoteUrl || video.serverUrl || (video.url && !video.url.startsWith("blob:") ? video.url : "");
+        if (!assetUrl) return [];
+        return [
+            {
+                type: "video" as const,
+                url: assetUrl,
+                remoteUrl: video.remoteUrl,
+                serverUrl: video.serverUrl,
+                mimeType: video.mimeType,
+                width: video.width,
+                height: video.height,
+                bytes: video.bytes,
+            },
+        ];
+    });
     return recordGenerationLog({
         id: `video-workbench:${log.id}`,
         kind: "video",
@@ -1272,23 +1300,10 @@ async function recordVideoGenerationLog(log: GenerationLog) {
         model: log.model || log.config.videoModel || log.config.model,
         summary: log.status === "成功" ? "视频生成完成" : log.status === "失败" ? "视频生成失败" : "视频生成中",
         durationMs: log.durationMs,
-        count: 1,
-        successCount: log.status === "成功" ? 1 : 0,
-        failCount: log.status === "失败" ? 1 : 0,
-        assets: assetUrl
-            ? [
-                  {
-                      type: "video",
-                      url: assetUrl,
-                      remoteUrl: video?.remoteUrl,
-                      serverUrl: video?.serverUrl,
-                      mimeType: video?.mimeType,
-                      width: video?.width,
-                      height: video?.height,
-                      bytes: video?.bytes,
-                  },
-              ]
-            : [],
+        count: Math.max(1, resultsFromLog(log).length),
+        successCount: videos.length,
+        failCount: log.failures?.length || (log.status === "\u5931\u8d25" ? 1 : 0),
+        assets,
         error: log.error,
         createdAt: log.createdAt,
         completedAt: Date.now(),
@@ -1300,6 +1315,7 @@ async function recordVideoGenerationLog(log: GenerationLog) {
 async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog> {
     const videoFallback = generatedVideoFallback(log.video);
     const video = log.video?.storageKey ? { ...log.video, url: await resolveMediaUrl(log.video.storageKey, videoFallback) } : log.video ? { ...log.video, url: browserReadableMediaUrl(videoFallback || log.video.url || "") } : undefined;
+    const videos = await Promise.all((log.videos?.length ? log.videos : video ? [video] : []).map(normalizeGeneratedVideo));
     const videoReferences = await Promise.all(
         (log.videoReferences || []).map(async (item) => ({
             ...item,
@@ -1337,10 +1353,19 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         seconds: log.seconds || config.videoSeconds || "",
         status: log.status || "成功",
         task: log.task,
-        video,
+        taskStartedAt: log.taskStartedAt,
+        taskResultId: log.taskResultId,
+        video: videos[videos.length - 1],
+        videos,
+        failures: log.failures || [],
         error: log.error,
         resultDeleted: Boolean(log.resultDeleted),
     };
+}
+
+async function normalizeGeneratedVideo(video: GeneratedVideo): Promise<GeneratedVideo> {
+    const fallback = generatedVideoFallback(video);
+    return video.storageKey ? { ...video, url: await resolveMediaUrl(video.storageKey, fallback) } : { ...video, url: browserReadableMediaUrl(fallback || video.url || "") };
 }
 
 function generatedVideoFallback(video?: Partial<GeneratedVideo>) {
@@ -1366,15 +1391,17 @@ function serializeLog(log: GenerationLog): GenerationLog {
         videoReferences: log.videoReferences.map((item) => (item.storageKey ? { ...item, url: "" } : item)),
         audioReferences: log.audioReferences.map((item) => (item.storageKey ? { ...item, url: "" } : item)),
         video: log.video?.storageKey ? { ...log.video, url: "" } : log.video,
+        videos: log.videos?.map((video) => (video.storageKey ? { ...video, url: "" } : video)),
     };
 }
 
 function resultsFromLog(log: GenerationLog): GenerationResult[] {
     if (log.resultDeleted) return [];
-    if (log.status === "生成中" && log.task) return [{ id: log.id, status: "pending" }];
-    if (log.video) return [{ id: log.video.id, status: "success", video: log.video }];
-    if (log.error) return [{ id: log.id, status: "failed", error: log.error }];
-    return [];
+    const results: GenerationResult[] = (log.videos?.length ? log.videos : log.video ? [log.video] : []).map((video) => ({ id: video.id, status: "success", video }));
+    (log.failures || []).forEach((failure) => results.push({ id: failure.resultId, status: "failed", error: failure.error }));
+    if (log.status === "\u751f\u6210\u4e2d" && log.task) results.push({ id: log.taskResultId || log.id, status: "pending" });
+    if (!results.length && log.error) results.push({ id: log.id, status: "failed", error: log.error });
+    return results;
 }
 
 function isSupportedAudioFile(file: File) {
@@ -1443,7 +1470,61 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
     };
 }
 
+function replaceResult(results: GenerationResult[], resultId: string, nextResult: GenerationResult) {
+    let replaced = false;
+    const nextResults = results.map((result) => {
+        if (result.id !== resultId) return result;
+        replaced = true;
+        return nextResult;
+    });
+    return replaced ? nextResults : [...nextResults, nextResult];
+}
+
+function buildLogFromVideoResults(
+    baseLog: GenerationLog | null,
+    snapshot: { text: string; config: AiConfig; references: ReferenceImage[]; videoReferences: ReferenceVideo[]; audioReferences: ReferenceAudio[] },
+    results: GenerationResult[],
+    durationMs: number,
+    error?: string,
+    pending?: { task: VideoGenerationTask; taskResultId: string },
+): GenerationLog {
+    const videos = results.flatMap((result) => (result.status === "success" && result.video ? [result.video] : []));
+    const failures = results.flatMap((result) => (result.status === "failed" ? [{ resultId: result.id, error: result.error || error || "生成失败" }] : []));
+    const hasPending = results.some((result) => result.status === "pending");
+    const status: GenerationLog["status"] = hasPending ? "生成中" : videos.length ? "成功" : "失败";
+    const latestVideo = videos[videos.length - 1];
+    return buildLog({
+        baseLog,
+        prompt: snapshot.text,
+        model: snapshot.config.videoModel || snapshot.config.model,
+        config: snapshot.config,
+        references: snapshot.references,
+        videoReferences: snapshot.videoReferences,
+        audioReferences: snapshot.audioReferences,
+        durationMs,
+        status,
+        task: pending?.task,
+        taskResultId: pending?.taskResultId,
+        video: latestVideo,
+        videos,
+        failures,
+        error: error || failures[0]?.error,
+        resultDeleted: !results.length,
+    });
+}
+
+function snapshotFromLog(log: GenerationLog, config: AiConfig) {
+    return {
+        text: log.prompt,
+        config,
+        references: log.references || [],
+        videoReferences: log.videoReferences || [],
+        audioReferences: log.audioReferences || [],
+    };
+}
+
 function buildLog({
+    baseLog,
     prompt,
     model,
     config,
@@ -1453,9 +1534,14 @@ function buildLog({
     durationMs,
     status,
     task,
+    taskResultId,
     video,
+    videos,
+    failures,
     error,
+    resultDeleted,
 }: {
+    baseLog?: GenerationLog | null;
     prompt: string;
     model: string;
     config: AiConfig;
@@ -1465,8 +1551,12 @@ function buildLog({
     durationMs: number;
     status: GenerationLog["status"];
     task?: VideoGenerationTask;
+    taskResultId?: string;
     video?: GeneratedVideo;
+    videos?: GeneratedVideo[];
+    failures?: GenerationFailure[];
     error?: string;
+    resultDeleted?: boolean;
 }): GenerationLog {
     const logConfig = {
         model: config.model,
@@ -1477,10 +1567,11 @@ function buildLog({
         videoGenerateAudio: config.videoGenerateAudio,
         videoWatermark: config.videoWatermark,
     };
+    const nextVideos = videos || (video ? [video] : baseLog?.videos || []);
     return {
-        id: nanoid(),
-        createdAt: Date.now(),
-        title: prompt.slice(0, 12) || "未命名",
+        id: baseLog?.id || nanoid(),
+        createdAt: baseLog?.createdAt || Date.now(),
+        title: baseLog?.title || prompt.slice(0, 12) || "未命名",
         prompt,
         time: new Date().toLocaleString("zh-CN", { hour12: false }),
         model,
@@ -1494,8 +1585,13 @@ function buildLog({
         seconds: logConfig.videoSeconds,
         status,
         task,
-        video,
+        taskStartedAt: task ? Date.now() : undefined,
+        taskResultId,
+        video: video || nextVideos[nextVideos.length - 1],
+        videos: nextVideos,
+        failures,
         error,
+        resultDeleted,
     };
 }
 

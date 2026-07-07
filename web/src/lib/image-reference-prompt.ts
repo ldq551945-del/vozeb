@@ -1,10 +1,8 @@
-import type { ReferenceImage } from "@/types/image";
-
 export function imageReferenceLabel(index: number) {
     return `图片${index + 1}`;
 }
 
-export function buildImageReferencePromptText(prompt: string, references: ReferenceImage[]) {
+export function buildImageReferencePromptText(prompt: string, references: readonly unknown[]) {
     const text = prompt.trim();
     if (!references.length) return text;
     const labels = references.map((_, index) => imageReferenceLabel(index));

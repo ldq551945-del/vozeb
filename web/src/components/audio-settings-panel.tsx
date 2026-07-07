@@ -23,55 +23,28 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const voice = normalizeAudioVoiceValue(config.audioVoice);
     const format = normalizeAudioFormatValue(config.audioFormat);
     const speed = normalizeAudioSpeedValue(config.audioSpeed);
+    const speedSelectOptions = speedOptions.map((value) => ({ value, label: audioSpeedLabel(value) }));
 
     return (
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">音频设置</div> : null}
                 <SettingGroup title="声音" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {audioVoiceOptions.map((item) => (
-                            <OptionPill key={item.value} selected={voice === item.value} theme={theme} onClick={() => onConfigChange("audioVoice", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                    </div>
+                    <AudioSelect value={voice} options={audioVoiceOptions} theme={theme} onChange={(value) => onConfigChange("audioVoice", value)} />
                 </SettingGroup>
-                <SettingGroup title="格式" color={theme.node.muted}>
-                    <div className="grid grid-cols-3 gap-2.5">
-                        {audioFormatOptions.map((item) => (
-                            <OptionPill key={item.value} selected={format === item.value} theme={theme} onClick={() => onConfigChange("audioFormat", item.value)}>
-                                {item.label}
-                            </OptionPill>
-                        ))}
-                    </div>
-                </SettingGroup>
-                <SettingGroup title="语速" color={theme.node.muted}>
-                    <div className="grid grid-cols-4 gap-2.5">
-                        {speedOptions.map((value) => (
-                            <OptionPill key={value} selected={speed === value} theme={theme} onClick={() => onConfigChange("audioSpeed", value)}>
-                                {audioSpeedLabel(value)}
-                            </OptionPill>
-                        ))}
-                    </div>
-                    <input
-                        type="number"
-                        min={0.25}
-                        max={4}
-                        step={0.05}
-                        className="h-9 w-full rounded-full border bg-transparent px-3 text-center text-sm outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                        style={{ borderColor: theme.node.stroke, color: theme.node.text, WebkitTextFillColor: theme.node.text }}
-                        value={config.audioSpeed || "1"}
-                        onChange={(event) => onConfigChange("audioSpeed", event.target.value)}
-                        onBlur={(event) => onConfigChange("audioSpeed", normalizeAudioSpeedValue(event.target.value))}
-                        onMouseDown={(event) => event.stopPropagation()}
-                    />
-                </SettingGroup>
+                <div className="grid grid-cols-2 gap-2.5">
+                    <SettingGroup title="格式" color={theme.node.muted}>
+                        <AudioSelect value={format} options={audioFormatOptions} theme={theme} onChange={(value) => onConfigChange("audioFormat", value)} />
+                    </SettingGroup>
+                    <SettingGroup title="语速" color={theme.node.muted}>
+                        <AudioSelect value={speed} options={speedSelectOptions} theme={theme} onChange={(value) => onConfigChange("audioSpeed", value)} />
+                    </SettingGroup>
+                </div>
                 <SettingGroup title="声音指令" color={theme.node.muted}>
                     <textarea
                         value={config.audioInstructions || ""}
                         placeholder="例如：自然、温暖、适合旁白。"
-                        className="thin-scrollbar h-20 w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm leading-5 outline-none"
+                        className="thin-scrollbar h-16 w-full resize-none rounded-xl border bg-transparent px-3 py-2 text-sm leading-5 outline-none"
                         style={{ borderColor: theme.node.stroke, color: theme.node.text }}
                         onChange={(event) => onConfigChange("audioInstructions", event.target.value)}
                         onMouseDown={(event) => event.stopPropagation()}
@@ -82,23 +55,27 @@ export function AudioSettingsPanel({ config, onConfigChange, theme, showTitle = 
     );
 }
 
-function OptionPill({ selected, theme, onClick, children }: { selected: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
+function AudioSelect({ value, options, theme, onChange }: { value: string; options: Array<{ value: string; label: string }>; theme: CanvasTheme; onChange: (value: string) => void }) {
     return (
-        <button
-            type="button"
-            className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80"
-            style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+        <select
+            className="h-10 w-full rounded-xl border bg-transparent px-3 text-sm outline-none"
+            style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
             onMouseDown={(event) => event.stopPropagation()}
-            onClick={onClick}
         >
-            {children}
-        </button>
+            {options.map((item) => (
+                <option key={item.value} value={item.value}>
+                    {item.label}
+                </option>
+            ))}
+        </select>
     );
 }
 
 function SettingGroup({ title, color, children }: { title: string; color: string; children: ReactNode }) {
     return (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
             <div className="text-xs font-medium" style={{ color }}>
                 {title}
             </div>

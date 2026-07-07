@@ -11,19 +11,24 @@ export default async function AnnouncementsPage() {
     return (
         <main className="min-h-dvh bg-background px-4 py-8 text-stone-950 dark:text-stone-100 sm:px-6">
             <div className="mx-auto max-w-4xl">
-                <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-stone-500 transition hover:text-stone-950 dark:text-stone-400 dark:hover:text-white">
-                    <ArrowLeft className="size-4" />
-                    返回首页
-                </Link>
-                <div className="mt-6 rounded-xl border border-stone-200 bg-white p-5 shadow-sm shadow-stone-200/50 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
-                    <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/80 dark:bg-cyan-950/40 dark:text-cyan-200 dark:ring-cyan-900/70">
-                            <Megaphone className="size-5" />
-                        </span>
-                        <div>
-                            <h1 className="text-2xl font-semibold">网站公告</h1>
-                            <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">按发布时间展示站点通知、维护说明和功能提醒。</p>
+                <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm shadow-stone-200/50 dark:border-stone-800 dark:bg-stone-950 dark:shadow-black/20">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/80 dark:bg-cyan-950/40 dark:text-cyan-200 dark:ring-cyan-900/70">
+                                <Megaphone className="size-5" />
+                            </span>
+                            <div className="min-w-0">
+                                <h1 className="text-2xl font-semibold">网站公告</h1>
+                                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">按发布时间展示站点通知、维护说明和功能提醒。</p>
+                            </div>
                         </div>
+                        <Link
+                            href="/"
+                            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-stone-200 px-3 text-sm font-medium text-stone-600 transition hover:border-stone-300 hover:bg-stone-50 hover:text-stone-950 dark:border-stone-800 dark:text-stone-300 dark:hover:border-stone-700 dark:hover:bg-stone-900 dark:hover:text-white"
+                        >
+                            <ArrowLeft className="size-4" />
+                            返回首页
+                        </Link>
                     </div>
                 </div>
                 <div className="mt-5 space-y-4">

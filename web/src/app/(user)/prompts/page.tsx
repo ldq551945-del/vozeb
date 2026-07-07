@@ -1,7 +1,7 @@
 "use client";
 
 import { FolderPlus, Search } from "lucide-react";
-import { type UIEvent, useEffect, useState } from "react";
+import { type UIEvent, useEffect, useRef, useState } from "react";
 import { App, Button, Empty, Input, Spin, Tag } from "antd";
 
 import { PromptCard } from "@/components/prompts/prompt-card";
@@ -18,16 +18,22 @@ export default function PromptsPage() {
     const [selectedTag, setSelectedTag] = useState(ALL_PROMPTS_OPTION);
     const [selectedCategory, setSelectedCategory] = useState(ALL_PROMPTS_OPTION);
     const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
+    const scrollContainerRef = useRef<HTMLElement | null>(null);
     const addAsset = useAssetStore((state) => state.addAsset);
     const copyText = useCopyText();
     const activeTags = selectedTag === ALL_PROMPTS_OPTION ? [] : [selectedTag];
     const { query, items: promptItems, tags: promptTags, categories: promptCategoryOptions, total: totalPrompts } = usePromptList({ keyword: titleKeyword, tags: activeTags, category: selectedCategory });
+    const activeFilterLabels = [selectedCategory !== ALL_PROMPTS_OPTION ? selectedCategory : "", selectedTag !== ALL_PROMPTS_OPTION ? selectedTag : "", titleKeyword.trim() ? `搜索：${titleKeyword.trim()}` : ""].filter(Boolean);
 
     useEffect(() => {
         if (query.isError) {
             message.error(query.error instanceof Error ? query.error.message : "获取提示词失败");
         }
     }, [message, query.error, query.isError]);
+
+    useEffect(() => {
+        scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    }, [selectedCategory, selectedTag, titleKeyword]);
 
     const toggleTag = (tag: string) => setSelectedTag(tag === selectedTag ? ALL_PROMPTS_OPTION : tag);
 
@@ -46,6 +52,7 @@ export default function PromptsPage() {
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-stone-800 dark:text-stone-100">
             <main
+                ref={scrollContainerRef}
                 className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]"
                 onScroll={handleListScroll}
             >
@@ -85,6 +92,21 @@ export default function PromptsPage() {
                                         ))}
                                     </div>
                                 </div>
+                            </div>
+                            <div className="mx-auto mt-4 flex max-w-6xl flex-wrap items-center justify-between gap-2 rounded-lg border border-stone-200 bg-white/85 px-3 py-2 text-sm text-stone-600 shadow-sm dark:border-stone-800 dark:bg-stone-950/80 dark:text-stone-300">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    <span className="font-medium text-stone-900 dark:text-stone-100">当前筛选</span>
+                                    {activeFilterLabels.length ? (
+                                        activeFilterLabels.map((label) => (
+                                            <Tag key={label} className="m-0">
+                                                {label}
+                                            </Tag>
+                                        ))
+                                    ) : (
+                                        <Tag className="m-0">全部</Tag>
+                                    )}
+                                </div>
+                                <span className="shrink-0 tabular-nums">匹配 {totalPrompts} 条</span>
                             </div>
                         </>
                     ) : null}
