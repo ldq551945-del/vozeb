@@ -359,6 +359,8 @@ API Key: 仅保存在服务端后台配置
 
 VOZEB 基于原创开源画布项目继续开发。感谢原创作者 basketikun 对无限画布、AI 创作工作流、Canvas Agent 和 Codex 插件能力的开源贡献。
 
+感谢 QQ 大佬 Kitty的猫 对 VOZEB 的持续赞助支持，帮助项目继续维护、测试和迭代。
+
 也感谢 LinuxDO 社区、相关提示词开源仓库、Codex / Claude Code 生态和所有工具链项目提供的灵感与基础设施。
 
 ### QQ 交流群
