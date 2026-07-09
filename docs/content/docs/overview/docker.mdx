@@ -15,8 +15,18 @@ description: 使用 Docker Compose 部署 VOZEB
 services:
   app:
     image: ghcr.io/csyqlz/vozeb:latest
+    container_name: vozeb
+    ports:
+      - "${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000"
     volumes:
       - vozeb-data:/app/web/.data
+    environment:
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+      NEXT_PUBLIC_DOC_URL: ${NEXT_PUBLIC_DOC_URL:-}
+      VOZEB_COOKIE_SECURE: ${VOZEB_COOKIE_SECURE:-}
+      VOZEB_DATA_DIR: /app/web/.data
+      VOZEB_INTERNAL_ORIGIN: http://127.0.0.1:3000
+    restart: unless-stopped
 
 volumes:
   vozeb-data:
@@ -33,8 +43,68 @@ docker compose up -d
 启动后访问：
 
 ```text
-http://服务器IP:3000
+https://你的域名
 ```
+
+默认 `docker-compose.yml` 使用发布镜像 `ghcr.io/csyqlz/vozeb:latest`，并通过 `VOZEB_BIND_HOST=0.0.0.0` 同时兼容 `http://服务器IP:3000` 直连和域名反向代理。先确认容器状态：
+
+```bash
+docker compose ps
+curl -I http://127.0.0.1:3000
+```
+
+如果 IP 可以访问但域名打不开，请先把域名 A/AAAA 记录解析到服务器，再用 Nginx、Caddy 或宝塔把域名反向代理到 `http://127.0.0.1:3000`。反代需要保留 `Host`、`X-Forwarded-Host`、`X-Forwarded-Proto`，否则 HTTPS 登录 Cookie 和参考图公网临时地址可能判断错误。域名部署建议复制 `.env.example` 为 `.env` 并填写：
+
+```env
+NEXT_PUBLIC_SITE_URL=https://你的域名
+VOZEB_COOKIE_SECURE=true
+```
+
+如果你只想允许域名反代访问，不想暴露 `服务器IP:3000`，在 `.env` 里追加：
+
+```env
+VOZEB_BIND_HOST=127.0.0.1
+```
+
+当前 `docker-compose.yml` 会把这些 `.env` 变量传入容器。Nginx 示例：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+发布镜像版端口配置：
+
+```yaml
+services:
+  app:
+    image: ghcr.io/csyqlz/vozeb:latest
+    container_name: vozeb
+    ports:
+      - "${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000"
+```
+
+本地构建版端口配置：
+
+```yaml
+services:
+  app:
+    image: vozeb:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vozeb
+    ports:
+      - "${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000"
+```
+
+默认 `VOZEB_BIND_HOST=0.0.0.0`，IP 直连和域名反代都可用。如果只想允许域名反代访问，在 `.env` 设置 `VOZEB_BIND_HOST=127.0.0.1`。
 
 第一次注册的账号会自动成为管理员。请用这个首个管理员账号进入后台，完成网站标题、Logo、SEO、邮箱注册、SMTP、模型渠道、默认模型、用户积分和公共提示词库配置。
 

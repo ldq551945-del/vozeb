@@ -21,7 +21,29 @@ docker compose up -d
 启动后访问：
 
 ```text
-http://服务器IP:3000
+https://你的域名
+```
+
+默认 Compose 使用 `VOZEB_BIND_HOST=0.0.0.0`，`http://服务器IP:3000` 直连和域名反向代理都可用。域名部署时，请把域名解析到服务器，并通过 Nginx、Caddy 或宝塔反向代理到 `http://127.0.0.1:3000`。建议在 `.env` 中填写：
+
+```env
+NEXT_PUBLIC_SITE_URL=https://你的域名
+VOZEB_COOKIE_SECURE=true
+```
+
+反向代理需要保留 `Host`、`X-Forwarded-Host` 和 `X-Forwarded-Proto` 请求头。
+
+发布镜像版和本地构建版都默认使用：
+
+```yaml
+ports:
+  - "${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000"
+```
+
+默认值 `0.0.0.0` 会让 IP 直连和域名反代都可用。如果只想允许域名反代访问，不想暴露 `服务器IP:3000`，在 `.env` 中设置：
+
+```env
+VOZEB_BIND_HOST=127.0.0.1
 ```
 
 如果拉取 `ghcr.io/csyqlz/vozeb:latest` 提示 `denied`，说明 GitHub Packages 里的镜像还没有设为 Public，或者服务器没有登录 GHCR。公开部署请进入 GitHub Packages 的 `vozeb` 页面，把包可见性改为 Public；私有部署请先执行 `docker login ghcr.io`。

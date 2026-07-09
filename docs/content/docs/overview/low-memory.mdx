@@ -17,8 +17,10 @@ docker compose -f docker-compose.lowmem.yml up -d
 打开：
 
 ```text
-http://服务器IP:3000
+https://你的域名
 ```
+
+`docker-compose.lowmem.yml` 默认也通过 `VOZEB_BIND_HOST=0.0.0.0` 同时兼容 `http://服务器IP:3000` 直连和域名反向代理。如果只想允许域名反代访问，在 `.env` 设置 `VOZEB_BIND_HOST=127.0.0.1`。
 
 首次注册的账号会自动成为管理员。账号、后台设置、签到记录和公共提示词保存在 `vozeb-data` 数据卷里，并通过 `VOZEB_DATA_DIR=/app/web/.data` 固定到持久化目录，升级镜像不会丢失。
 
@@ -27,6 +29,7 @@ http://服务器IP:3000
 `docker-compose.lowmem.yml` 默认使用：
 
 - `ghcr.io/csyqlz/vozeb:latest` 预构建镜像。
+- `${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000` 端口绑定，默认兼容 IP 直连和域名反代。
 - `mem_limit: 512m` 和 `memswap_limit: 768m`。
 - `NODE_OPTIONS=--max-old-space-size=384` 限制 Node.js 堆内存。
 - `UV_THREADPOOL_SIZE=2` 减少低配机器上的线程开销。

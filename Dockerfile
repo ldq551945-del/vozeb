@@ -46,4 +46,4 @@ COPY --from=web-build /app/web/.next/static /app/web/.next/static
 COPY web/scripts/reset-admin-password.mjs /app/web/scripts/reset-admin-password.mjs
 
 EXPOSE 3000
-CMD ["sh", "-c", "cd /app/web && PORT=3000 node server.js"]
+CMD ["sh", "-c", "cd /app/web && node server.js"]

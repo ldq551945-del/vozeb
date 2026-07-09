@@ -14,3 +14,5 @@ services:
         value: "2"
       - key: VOZEB_DATA_DIR
         value: /app/web/.data
+      - key: VOZEB_INTERNAL_ORIGIN
+        value: http://127.0.0.1:3000

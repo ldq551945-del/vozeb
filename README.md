@@ -54,13 +54,45 @@ docker compose pull
 docker compose up -d
 ```
 
-默认 `docker-compose.yml` 使用 `ghcr.io/csyqlz/vozeb:latest`，只会拉取预构建镜像并启动容器，不会执行 `next build`。账号、后台设置、签到记录和公共提示词会保存在 `vozeb-data` 数据卷里。
+默认 `docker-compose.yml` 使用 `ghcr.io/csyqlz/vozeb:latest`，只会拉取预构建镜像并启动容器，不会执行 `next build`。端口绑定默认使用 `VOZEB_BIND_HOST=0.0.0.0`，同时兼容 `http://服务器IP:3000` 直连和域名反向代理。账号、后台设置、签到记录和公共提示词会保存在 `vozeb-data` 数据卷里。
 
 ### 2. 首次初始化
 
-打开 `http://服务器IP:3000`，第一次注册的账号会自动成为管理员。这个首个管理员账号用于初始化站点，管理员登录后可进入 `管理员后台`，配置网站标题、Logo、SEO、注册策略、邮箱服务、模型渠道、默认模型、用户积分和公共提示词库。
+启动后可先打开 `http://服务器IP:3000` 检查服务，也可以配置域名反向代理后打开 `https://你的域名`。第一次注册的账号会自动成为管理员。这个首个管理员账号用于初始化站点，管理员登录后可进入 `管理员后台`，配置网站标题、Logo、SEO、注册策略、邮箱服务、模型渠道、默认模型、用户积分和公共提示词库。
 
-如果使用 `http://服务器IP:3000` 直连访问，登录 Cookie 会按 HTTP 模式写入；如果通过 HTTPS 反向代理访问，反代需要保留 `X-Forwarded-Proto: https`，VOZEB 会自动写入安全 Cookie。极少数代理环境判断异常时，可用 `VOZEB_COOKIE_SECURE=true` 或 `VOZEB_COOKIE_SECURE=false` 强制 Cookie 模式。
+默认端口会绑定到 `0.0.0.0:3000`，所以 IP 直连和域名反代都能工作。直连访问时登录 Cookie 会按 HTTP 模式写入；如果通过 HTTPS 反向代理访问，反代需要保留 `X-Forwarded-Proto: https`，VOZEB 会自动写入安全 Cookie。极少数代理环境判断异常时，可用 `VOZEB_COOKIE_SECURE=true` 或 `VOZEB_COOKIE_SECURE=false` 强制 Cookie 模式。
+
+如果 IP 直连无法访问，请先确认云服务器安全组、防火墙和面板防火墙已经放行 TCP `3000` 端口，并确认容器正在运行：
+
+```bash
+docker compose ps
+curl -I http://127.0.0.1:3000
+```
+
+如果 IP 可以访问但域名无法访问，请确认域名 A/AAAA 记录已经解析到服务器，并用 Nginx、Caddy 或宝塔反向代理到 `http://127.0.0.1:3000`。反代必须保留 `Host`、`X-Forwarded-Host`、`X-Forwarded-Proto`，否则登录 Cookie 和参考图公网临时地址可能判断错误。使用域名部署时建议复制 `.env.example` 为 `.env` 并填写：
+
+```env
+NEXT_PUBLIC_SITE_URL=https://你的域名
+VOZEB_COOKIE_SECURE=true
+```
+
+如果你只想允许域名反代访问，不想暴露 `服务器IP:3000`，在 `.env` 里追加：
+
+```env
+VOZEB_BIND_HOST=127.0.0.1
+```
+
+当前 `docker-compose.yml` 会把这些 `.env` 变量传入容器。Nginx 示例：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
 
 ### 3. 配置默认模型渠道
 
@@ -286,10 +318,43 @@ services:
     image: ghcr.io/csyqlz/vozeb:latest
     container_name: vozeb
     ports:
-      - "3000:3000"
+      - "${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000"
     volumes:
       - vozeb-data:/app/web/.data
     environment:
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+      NEXT_PUBLIC_DOC_URL: ${NEXT_PUBLIC_DOC_URL:-}
+      VOZEB_COOKIE_SECURE: ${VOZEB_COOKIE_SECURE:-}
+      VOZEB_DATA_DIR: /app/web/.data
+      VOZEB_INTERNAL_ORIGIN: http://127.0.0.1:3000
+    restart: unless-stopped
+
+volumes:
+  vozeb-data:
+```
+
+默认 `VOZEB_BIND_HOST=0.0.0.0`，IP 直连和域名反代都可用。如果只想允许域名反代访问，在 `.env` 设置 `VOZEB_BIND_HOST=127.0.0.1`。
+
+本地构建源码的 Compose 写法如下，端口同样使用 `VOZEB_BIND_HOST` 自动适配：
+
+```yaml
+services:
+  app:
+    image: vozeb:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vozeb
+    ports:
+      - "${VOZEB_BIND_HOST:-0.0.0.0}:3000:3000"
+    volumes:
+      - vozeb-data:/app/web/.data
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+      NEXT_PUBLIC_DOC_URL: ${NEXT_PUBLIC_DOC_URL:-}
+      VOZEB_COOKIE_SECURE: ${VOZEB_COOKIE_SECURE:-}
       VOZEB_DATA_DIR: /app/web/.data
       VOZEB_INTERNAL_ORIGIN: http://127.0.0.1:3000
     restart: unless-stopped
