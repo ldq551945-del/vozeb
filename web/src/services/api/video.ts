@@ -150,7 +150,7 @@ async function pollServerVideoTask(config: AiConfig, task: VideoGenerationTask, 
     const response = await axios.get<{ task?: { status?: string; resultUrl?: string; error?: string } }>(`/api/video-tasks/${encodeURIComponent(task.id)}`, { signal: options?.signal, headers: { "cache-control": "no-cache" } });
     const state = response.data?.task;
     if (!state) return { status: "failed", error: "视频后台任务不存在" };
-    if (state.status === "success" && state.resultUrl) return { status: "completed", result: await videoResultFromUrl(resolveVideoMediaUrl(config, state.resultUrl, state.resultUrl), options) };
+    if (state.status === "success" && state.resultUrl) return { status: "completed", result: await videoResultFromUrl(state.resultUrl.startsWith("/") ? { url: state.resultUrl } : resolveVideoMediaUrl(config, state.resultUrl, state.resultUrl), options) };
     if (state.status === "error") return { status: "failed", error: videoStageError(state.error || "视频生成失败") };
     return { status: "pending" };
 }
