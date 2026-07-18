@@ -1269,11 +1269,12 @@ function normalizeSiteFriendLinks(settings: unknown): SiteFriendLink[] {
 
 function normalizeSiteSocials(settings: Partial<SiteSocialSettings> | undefined): SiteSocialSettings {
     const emailSetting = settings?.email?.url === "mailto:contact@example.com" ? { ...settings.email, url: DEFAULT_SITE_SOCIALS.email.url } : settings?.email;
+    const wechatSetting = settings?.wechat || (settings?.instagram ? { enabled: false, label: DEFAULT_SITE_SOCIALS.wechat.label, url: "", showLabel: true } : undefined);
     return {
         email: normalizeSiteSocial("email", emailSetting),
         telegram: normalizeSiteSocial("telegram", settings?.telegram),
         x: normalizeSiteSocial("x", settings?.x),
-        wechat: normalizeSiteSocial("wechat", settings?.wechat || settings?.instagram),
+        wechat: normalizeSiteSocial("wechat", wechatSetting),
     };
 }
 
