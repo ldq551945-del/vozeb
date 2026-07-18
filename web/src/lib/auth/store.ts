@@ -173,14 +173,14 @@ export type SiteSocialKey = "email" | "telegram" | "x" | "wechat";
 
 export type SiteSocialSettings = Record<
     SiteSocialKey,
-    { enabled: boolean; label: string; url: string; showLabel?: boolean }
-> & { instagram?: { enabled?: boolean; label?: string; url?: string; showLabel?: boolean } };
+    { enabled: boolean; label: string; url: string }
+> & { instagram?: { enabled?: boolean; label?: string; url?: string } };
 
 const DEFAULT_SITE_SOCIALS: SiteSocialSettings = {
     email: { enabled: true, label: "邮箱联系", url: "mailto:dq-contact@qq.com" },
     telegram: { enabled: false, label: "Telegram", url: "" },
     x: { enabled: false, label: "X", url: "" },
-    wechat: { enabled: false, label: "联系反馈", url: "", showLabel: true },
+    wechat: { enabled: false, label: "联系反馈", url: "" },
 };
 
 const DEFAULT_SITE_FRIEND_LINKS: SiteFriendLink[] = [
@@ -1269,7 +1269,7 @@ function normalizeSiteFriendLinks(settings: unknown): SiteFriendLink[] {
 
 function normalizeSiteSocials(settings: Partial<SiteSocialSettings> | undefined): SiteSocialSettings {
     const emailSetting = settings?.email?.url === "mailto:contact@example.com" ? { ...settings.email, url: DEFAULT_SITE_SOCIALS.email.url } : settings?.email;
-    const wechatSetting = settings?.wechat || (settings?.instagram ? { enabled: false, label: DEFAULT_SITE_SOCIALS.wechat.label, url: "", showLabel: true } : undefined);
+    const wechatSetting = settings?.wechat || (settings?.instagram ? { enabled: false, label: DEFAULT_SITE_SOCIALS.wechat.label, url: "" } : undefined);
     return {
         email: normalizeSiteSocial("email", emailSetting),
         telegram: normalizeSiteSocial("telegram", settings?.telegram),
@@ -1282,7 +1282,7 @@ function normalizeSiteSocial(key: SiteSocialKey, setting: Partial<SiteSocialSett
     const fallback = DEFAULT_SITE_SOCIALS[key];
     const url = normalizeLinkUrl(setting?.url, fallback.url);
     const hidden = /(github|vozeb|csyqlz)/i.test(url);
-    return { enabled: !hidden && setting?.enabled !== false, label: normalizeText(setting?.label, fallback.label, 32), url: hidden ? "" : url, showLabel: setting?.showLabel ?? fallback.showLabel ?? false };
+    return { enabled: !hidden && setting?.enabled !== false, label: normalizeText(setting?.label, fallback.label, 32), url: hidden ? "" : url };
 }
 
 function normalizeMailSettings(settings: Partial<MailSettings> | undefined): MailSettings {

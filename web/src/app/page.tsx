@@ -35,7 +35,7 @@ type SessionPayload = {
 
 type SiteSocialKey = "email" | "telegram" | "x" | "wechat";
 
-type SiteSocialSettings = Record<SiteSocialKey, { enabled: boolean; label: string; url: string; showLabel?: boolean }>;
+type SiteSocialSettings = Record<SiteSocialKey, { enabled: boolean; label: string; url: string }>;
 type SiteFriendLink = { id: string; label: string; url: string; enabled: boolean };
 type SiteShowcaseMode = "random" | "custom";
 type SiteShowcaseItem = { id: string; title: string; coverUrl: string; prompt: string; tags: string[]; category: string };
@@ -79,7 +79,7 @@ const defaultSite: {
         email: { enabled: true, label: "邮箱联系", url: "mailto:dq-contact@qq.com" },
         telegram: { enabled: false, label: "Telegram", url: "" },
         x: { enabled: false, label: "X", url: "" },
-        wechat: { enabled: false, label: "联系反馈", url: "", showLabel: true },
+        wechat: { enabled: false, label: "联系反馈", url: "" },
     } satisfies SiteSocialSettings,
 };
 
@@ -150,6 +150,7 @@ export default function HomePage() {
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [authOpen, setAuthOpen] = useState(false);
+    const [isAdminHost, setIsAdminHost] = useState(false);
     const [sessionReady, setSessionReady] = useState(false);
     const [site, setSite] = useState(defaultSite);
     const user = useUserStore((state) => state.user);
@@ -159,6 +160,7 @@ export default function HomePage() {
     const friendLinks = (site.friendLinks || []).filter((link) => link.enabled && link.url);
     const previewItems = promptShowcase.filter((item) => item.coverUrl);
     const hasVerifiedUser = sessionReady && Boolean(user);
+    const showAdminEntry = hasVerifiedUser && user?.role === "admin" && isAdminHost;
 
     const openProtectedEntry = (path: string) => {
         if (hasVerifiedUser) {
@@ -169,9 +171,13 @@ export default function HomePage() {
     };
 
     useEffect(() => {
-        const routes = user ? [...authenticatedPrefetchRoutes, "/profile"] : publicPrefetchRoutes;
+        setIsAdminHost(window.location.hostname.toLowerCase() === "admin.dqin-666zj.top");
+    }, []);
+
+    useEffect(() => {
+        const routes = user ? [...authenticatedPrefetchRoutes, "/profile", ...(showAdminEntry ? ["/admin"] : [])] : publicPrefetchRoutes;
         return prefetchRoutesAfterIdle(routes, router.prefetch);
-    }, [router, user]);
+    }, [router, showAdminEntry, user]);
 
     useEffect(() => {
         let cancelled = false;
@@ -267,7 +273,18 @@ export default function HomePage() {
                         <span className="truncate text-xl font-semibold tracking-normal">{site.title || "DQ"}</span>
                     </Link>
                     <nav className="landing-nav-pill hidden items-center gap-1 text-sm font-medium text-stone-700 md:flex dark:text-stone-300">
-                        {navigationTools.slice(0, 4).map((tool) => (
+                        {navigationTools.slice(0, 1).map((tool) => (
+                            <Link key={tool.slug} href={`/${tool.slug}`} prefetch className="rounded-md px-4 py-2 transition hover:bg-stone-950/6 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white">
+                                {tool.label}
+                            </Link>
+                        ))}
+                        {showAdminEntry ? (
+                            <Link href="/admin" prefetch className="inline-flex items-center gap-1.5 rounded-md px-4 py-2 transition hover:bg-stone-950/6 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white">
+                                <ShieldCheck className="size-4" />
+                                管理入口
+                            </Link>
+                        ) : null}
+                        {navigationTools.slice(1, 4).map((tool) => (
                             <Link key={tool.slug} href={`/${tool.slug}`} prefetch className="rounded-md px-4 py-2 transition hover:bg-stone-950/6 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white">
                                 {tool.label}
                             </Link>
@@ -452,7 +469,7 @@ export default function HomePage() {
                                 .map(([key, social]) => (
                                     <Link key={key} href={social.url} className="landing-footer-social" title={social.label} target={social.url.startsWith("/") ? undefined : "_blank"} rel={social.url.startsWith("/") ? undefined : "noreferrer"}>
                                         {socialIconByKey[key as SiteSocialKey]}
-                                        <span className={social.showLabel ? "text-xs font-medium" : "sr-only"}>{social.label}</span>
+                                        <span className={key === "wechat" ? "text-xs font-medium" : "sr-only"}>{social.label}</span>
                                     </Link>
                                 ))}
                         </div>

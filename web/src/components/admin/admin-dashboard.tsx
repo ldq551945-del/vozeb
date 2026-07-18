@@ -149,11 +149,11 @@ const channelProtocolOptions: Array<{ value: SystemChannelProtocol; label: strin
     { value: "compatible", label: "通用兼容" },
 ];
 
-const siteSocialItems: Array<{ key: SiteSocialKey; label: string; placeholder: string; icon: ReactNode; showLabelToggle?: boolean }> = [
+const siteSocialItems: Array<{ key: SiteSocialKey; label: string; placeholder: string; icon: ReactNode }> = [
     { key: "email", label: "邮箱联系", placeholder: "mailto:dq-contact@qq.com", icon: <Mail className="size-4" /> },
     { key: "telegram", label: "Telegram", placeholder: "https://t.me/your_account", icon: <Send className="size-4" /> },
     { key: "x", label: "X", placeholder: "https://example.com/feedback", icon: <span className="text-xs font-bold">X</span> },
-    { key: "wechat", label: "联系反馈", placeholder: "微信二维码或联系页链接", icon: <MessageCircle className="size-4" />, showLabelToggle: true },
+    { key: "wechat", label: "联系反馈", placeholder: "微信二维码或联系页链接", icon: <MessageCircle className="size-4" /> },
 ];
 
 export function AdminDashboard({ initialUsers, initialSettings, initialPromptCount, currentUser }: AdminDashboardProps) {
@@ -1825,7 +1825,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                                                 </span>
                                                                 {item.label}
                                                             </div>
-                                                            <div className="flex items-center gap-2"><Switch checked={social.enabled} checkedChildren="显示" unCheckedChildren="隐藏" onChange={(enabled) => updateSiteSocialSetting(item.key, { enabled })} />{item.showLabelToggle ? <Switch size="small" checked={social.showLabel !== false} checkedChildren="文字" unCheckedChildren="图标" onChange={(showLabel) => updateSiteSocialSetting(item.key, { showLabel })} /> : null}</div>
+                                                            <Switch checked={social.enabled} checkedChildren="显示" unCheckedChildren="隐藏" onChange={(enabled) => updateSiteSocialSetting(item.key, { enabled })} />
                                                         </div>
                                                         <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
                                                             <Input value={social.label} maxLength={32} placeholder={item.label} onChange={(event) => updateSiteSocialSetting(item.key, { label: event.target.value })} />
