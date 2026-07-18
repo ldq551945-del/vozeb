@@ -45,6 +45,7 @@ import { Minimap } from "../components/canvas-mini-map";
 import { CanvasNode } from "../components/canvas-node";
 import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "../components/canvas-node-prompt-panel";
 import { CanvasToolbar } from "../components/canvas-toolbar";
+import { CanvasSidePanel } from "../components/canvas-side-panel";
 import type { InsertAssetPayload } from "../components/asset-picker-modal";
 import { CanvasZoomControls } from "../components/canvas-zoom-controls";
 import { useCanvasAgentStore } from "../stores/use-canvas-agent-store";
@@ -2833,10 +2834,26 @@ function VozebCanvasPage() {
         }, CANVAS_AGENT_PANEL_MOTION_MS);
     };
 
+    const focusNode = useCallback(
+        (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (!node) return;
+            const scale = Math.min(1.4, Math.max(0.7, viewportRef.current.k));
+            const centerX = node.position.x + node.width / 2;
+            const centerY = node.position.y + node.height / 2;
+            setSelectedNodeIds(new Set([nodeId]));
+            setSelectedConnectionId(null);
+            setContextMenu(null);
+            setViewport({ x: size.width / 2 - centerX * scale, y: size.height / 2 - centerY * scale, k: scale });
+        },
+        [size.height, size.width],
+    );
+
     if (!projectLoaded) return <CanvasRefreshShell />;
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
+            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onInsertAsset={handleAssetInsert} />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || "未命名画布"}

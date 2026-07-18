@@ -6,6 +6,7 @@ import { getImageBlob } from "@/services/image-storage";
 import { APP_EXPORT_ID } from "@/lib/storage-keys";
 import type { CanvasExportAsset, CanvasExportFile } from "../export-types";
 import type { CanvasProject } from "../stores/use-canvas-store";
+import { CanvasNodeType, type CanvasNodeData } from "../types";
 
 export async function exportCanvasProjects(projects: CanvasProject[], fileName = "无限画布") {
     const zipFiles: { name: string; data: BlobPart }[] = [];
@@ -30,6 +31,46 @@ export async function exportCanvasProjects(projects: CanvasProject[], fileName =
     saveAs(zip, `${safeFileName(fileName)}.zip`);
 }
 
+export async function exportCanvasNodes(nodes: CanvasNodeData[], fileName = "画布元素") {
+    const zipFiles: { name: string; data: BlobPart }[] = [];
+    const used = new Set<string>();
+    const uniqueName = (base: string, extension: string) => {
+        const safe = safeFileName(base) || "元素";
+        let name = `${safe}.${extension}`;
+        for (let index = 1; used.has(name); index += 1) name = `${safe}-${index}.${extension}`;
+        used.add(name);
+        return name;
+    };
+
+    await Promise.all(
+        nodes.map(async (node) => {
+            const title = node.title || node.type;
+            const storageKey = node.metadata?.storageKey || "";
+            if (storageKey) {
+                const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
+                if (blob) {
+                    zipFiles.push({ name: uniqueName(title, fileExtension(blob.type, storageKey)), data: blob });
+                    return;
+                }
+            }
+            if (node.type === CanvasNodeType.Text) {
+                zipFiles.push({ name: uniqueName(title, "txt"), data: node.metadata?.content || node.metadata?.prompt || "" });
+                return;
+            }
+            const content = node.metadata?.content;
+            if (content?.startsWith("data:")) {
+                const blob = await (await fetch(content)).blob();
+                zipFiles.push({ name: uniqueName(title, fileExtension(blob.type, storageKey)), data: blob });
+                return;
+            }
+            zipFiles.push({ name: uniqueName(title, "json"), data: JSON.stringify(node, null, 2) });
+        }),
+    );
+
+    const zip = await createZip(zipFiles);
+    saveAs(zip, `${safeFileName(fileName)}.zip`);
+}
+
 function collectStorageKeys(value: unknown, keys = new Set<string>()) {
     if (!value || typeof value !== "object") return [...keys];
     if ("storageKey" in value && typeof value.storageKey === "string" && value.storageKey.includes(":")) keys.add(value.storageKey);
@@ -48,5 +89,7 @@ function fileExtension(mimeType: string, storageKey: string) {
     if (mimeType.includes("gif")) return "gif";
     if (mimeType.includes("mp4")) return "mp4";
     if (mimeType.includes("webm")) return "webm";
+    if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+    if (mimeType.includes("wav")) return "wav";
     return storageKey.startsWith("image:") ? "png" : "bin";
 }
