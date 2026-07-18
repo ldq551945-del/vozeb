@@ -8,14 +8,22 @@ import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedan
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
 
-const resolutionOptions = [{ value: "720", label: "720p" }, { value: "1080", label: "1080p" }];
-const sizeOptions = [
-    { value: "2:3", label: "2:3", width: 2, height: 3 },
-    { value: "3:2", label: "3:2", width: 3, height: 2 },
-    { value: "1:1", label: "1:1", width: 1, height: 1 },
-    { value: "16:9", label: "16:9", width: 16, height: 9 },
-    { value: "9:16", label: "9:16", width: 9, height: 16 },
+const resolutionOptions = [
+    { value: "720", label: "720p" },
+    { value: "480", label: "480p" },
 ];
+
+const sizeOptions = [
+    { value: "1280x720", label: "横屏", width: 1280, height: 720 },
+    { value: "720x1280", label: "竖屏", width: 720, height: 1280 },
+    { value: "1024x1024", label: "方形", width: 1024, height: 1024 },
+    { value: "1792x1024", label: "宽屏", width: 1792, height: 1024 },
+    { value: "1024x1792", label: "长图", width: 1024, height: 1792 },
+    { value: "auto", label: "auto", width: 0, height: 0 },
+];
+
+const defaultSecondOptions = [5, 10];
+const legacyDefaultSecondKeys = new Set(["12", "16"]);
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -26,61 +34,71 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
-    if (isSeedanceVideoConfig(config)) return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
-    const model = modelOptionName(config.model || config.videoModel);
-    const grok = isGrokVideoModel(model);
-    const seconds = Math.max(grok ? 10 : 1, Math.min(15, Math.floor(Number(config.videoSeconds) || (grok ? 10 : 5))));
-    const ratio = normalizeVideoRatioValue(config.size);
+    if (isSeedanceVideoConfig(config)) {
+        return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+    }
+
+    const seconds = config.videoSeconds || "5";
+    const secondOptions = videoSecondOptionsFromConfig(config);
+    const size = normalizeVideoSizeValue(config.size);
+    const dimensions = readSizeDimensions(size);
     const resolution = normalizeVideoResolutionValue(config.vquality);
+    const updateDimension = (key: "width" | "height", value: number | null) => {
+        const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
+        onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
+    };
+
     return (
         <ImageSettingsTheme theme={theme}>
             <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
                 {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
-                {videoModelHint(model) ? <div className="rounded-lg border px-3 py-2 text-xs leading-5 opacity-75" style={{ borderColor: theme.node.stroke }}>{videoModelHint(model)}</div> : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
-                    <div className="grid grid-cols-2 gap-2.5">
-                        {resolutionOptions.map((item) => <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>{item.label}</OptionPill>)}
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {resolutionOptions.map((item) => (
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                                {item.label}
+                            </OptionPill>
+                        ))}
+                        <ResolutionInput value={resolution} theme={theme} onChange={(value) => onConfigChange("vquality", value)} />
                     </div>
                 </SettingGroup>
-                <SettingGroup title="尺寸比例" color={theme.node.muted}>
-                    <div className="grid grid-cols-5 gap-2">
+                <SettingGroup title="尺寸" color={theme.node.muted}>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
+                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                        <span className="text-lg opacity-45">↔</span>
+                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5">
                         {sizeOptions.map((item) => (
-                            <button key={item.value} type="button" className="flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-xs transition hover:opacity-80" style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={() => onConfigChange("size", item.value)}>
+                            <button
+                                key={item.value}
+                                type="button"
+                                className="flex h-[78px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                style={{ borderColor: size === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={() => onConfigChange("size", item.value)}
+                            >
                                 <SizePreview width={item.width} height={item.height} color={theme.node.text} />
                                 <span>{item.label}</span>
+                                {item.value === "auto" ? null : <span className="text-[11px] leading-none opacity-55">{item.value}</span>}
                             </button>
                         ))}
                     </div>
                 </SettingGroup>
-                <SettingGroup title="时长" color={theme.node.muted}>
-                    <div className="flex items-center gap-3">
-                        <input type="range" min={grok ? 10 : 1} max={15} step={grok ? 5 : 1} value={seconds} className="min-w-0 flex-1 accent-current" onChange={(event) => onConfigChange("videoSeconds", event.target.value)} />
-                        <span className="w-12 text-right text-sm tabular-nums">{seconds}s</span>
+                <SettingGroup title="秒数" color={theme.node.muted}>
+                    <div className="grid grid-cols-3 gap-2.5">
+                        {secondOptions.map((value) => (
+                            <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                                {value}s
+                            </OptionPill>
+                        ))}
+                        <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     </div>
-                    {grok ? <div className="text-[11px] leading-4 opacity-55">当前 Grok 版本支持 10 秒或 15 秒。</div> : null}
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
     );
 }
-
-export function normalizeVideoSizeValue(value: string) {
-    return /^\d+x\d+$/.test(value || "") ? value : normalizeVideoRatioValue(value);
-}
-
-export function normalizeVideoRatioValue(value: string) {
-    if (["2:3", "3:2", "1:1", "16:9", "9:16"].includes(value)) return value;
-    return "9:16";
-}
-
-export function isGrokVideoModel(model: string) {
-    return /grok.*video|video.*grok/i.test(modelOptionName(model));
-}
-
-export function videoModelHint(model: string) {
-    return isGrokVideoModel(model) ? "Grok 视频支持文生视频；使用参考图时仅支持 1 张作为首帧，不支持参考视频或参考音频。" : "";
-}
-
 
 function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
     const model = modelOptionName(config.model || config.videoModel);
@@ -177,9 +195,14 @@ function videoSecondOptionsFromConfig(config: AiConfig, allowAuto = false, maxSe
     return values.sort((a, b) => (a === -1 ? -1 : b === -1 ? 1 : a - b));
 }
 
+export function normalizeVideoSizeValue(value: string) {
+    if (value === "auto") return "auto";
+    if (/^\d+x\d+$/.test(value || "")) return value;
+    return ["9:16", "2:3", "3:4"].includes(value) ? "720x1280" : "1280x720";
+}
 
 export function normalizeVideoResolutionValue(value: string) {
-    if (value === "480p" || value === "low") return "720";
+    if (value === "480p" || value === "low") return "480";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
     return value.replace(/p$/i, "") || "720";
 }

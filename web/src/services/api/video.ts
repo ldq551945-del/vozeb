@@ -24,7 +24,7 @@ type RequestOptions = { signal?: AbortSignal };
 type ResolvedVideoMediaUrl = { url: string; remoteUrl?: string };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; remoteUrl?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "generation" | "server"; model: string; pollPath?: string; resultUrl?: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "generation"; model: string; pollPath?: string; resultUrl?: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 const GLOBAL_AIOPC_VIDEO_CREATE_PATH = "/videos/videos";
@@ -105,7 +105,6 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
     const protocol = requestConfig.advancedConfig?.protocol === "sub2api" ? "auto" : requestConfig.advancedConfig?.protocol || "auto";
-    if (requestConfig.apiSource === "system" && protocol === "openai" && isGrokVideoModelName(selectedModel)) return createServerVideoTask(requestConfig, selectedModel, prompt, references, options);
     if (protocol === "seedance" || (protocol === "auto" && isSeedanceVideoConfig(requestConfig))) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -124,7 +123,6 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
-    if (task.provider === "server") return pollServerVideoTask(requestConfig, task, options);
     if (task.provider === "generation" && task.resultUrl) {
         return { status: "completed", result: await videoResultFromUrl(resolveVideoMediaUrl(requestConfig, task.resultUrl, aiApiUrl(requestConfig, task.pollPath || VIDEO_CREATE_PATHS[0])), options) };
     }
@@ -138,24 +136,6 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     if (result.url) return { url: result.url, remoteUrl: result.remoteUrl || result.url, storageKey: "", bytes: 0, mimeType: result.mimeType || "video/mp4" };
     throw new Error("视频接口没有返回可播放的视频");
 }
-async function createServerVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
-    const serializedReferences = await Promise.all(references.slice(0, 1).map(async (reference) => ({ name: reference.name, type: reference.type, dataUrl: await imageToDataUrl(reference) })));
-    const response = await axios.post<{ task?: { id?: string } }>("/api/video-tasks", { config: { apiSource: "system", baseUrl: config.baseUrl, apiKey: "system", apiFormat: "openai", model: modelOptionName(model), size: config.size, vquality: config.vquality, videoSeconds: config.videoSeconds, advancedConfig: config.advancedConfig }, prompt, references: serializedReferences }, { signal: options?.signal });
-    const id = response.data?.task?.id;
-    if (!id) throw new Error("视频后台任务创建失败");
-    return { id, provider: "server", model };
-}
-
-async function pollServerVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
-    const response = await axios.get<{ task?: { status?: string; resultUrl?: string; error?: string } }>(`/api/video-tasks/${encodeURIComponent(task.id)}`, { signal: options?.signal, headers: { "cache-control": "no-cache" } });
-    const state = response.data?.task;
-    if (!state) return { status: "failed", error: "视频后台任务不存在" };
-    if (state.status === "success" && state.resultUrl) return { status: "completed", result: await videoResultFromUrl(state.resultUrl.startsWith("/") ? { url: state.resultUrl } : resolveVideoMediaUrl(config, state.resultUrl, state.resultUrl), options) };
-    if (state.status === "error") return { status: "failed", error: videoStageError(state.error || "视频生成失败") };
-    return { status: "pending" };
-}
-
-function isGrokVideoModelName(model: string) { return /grok.*video|video.*grok/i.test(modelOptionName(model)); }
 
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     try {
