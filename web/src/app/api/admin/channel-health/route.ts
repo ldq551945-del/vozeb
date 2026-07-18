@@ -128,7 +128,7 @@ async function testImage(baseUrl: string, apiKey: string, model: string): Promis
                 createPath: "/images/generations",
                 requestTemplate: '{"model":"{{model}}","prompt":"{{prompt}}","size":"{{size}}","response_format":"url"}',
                 resultField: "data[0].url / data[0].b64_json",
-                referenceRule: "图生图使用 /images/edits；VOZEB 会按 multipart、image、images、image_url、input_image 等常见字段自动兼容。",
+                referenceRule: "图生图使用 /images/edits；DQ 会按 multipart、image、images、image_url、input_image 等常见字段自动兼容。",
                 supportsReferenceImage: true,
                 ...imageHealthReferenceConfig(baseUrl),
                 remoteUrl: findStringByKeys(payload, [
@@ -328,7 +328,7 @@ function videoHealthConfig(baseUrl: string, model: string, path: string): Partia
             resultField: "/videos/:task_id/content",
             statusField: "status",
             durationRange: "按上游模型限制",
-            referenceRule: "参考图使用 multipart 文件上传，由 VOZEB 自动组装。",
+            referenceRule: "参考图使用 multipart 文件上传，由 DQ 自动组装。",
             supportsReferenceImage: true,
             supportsReferenceVideo: false,
             supportsReferenceAudio: false,

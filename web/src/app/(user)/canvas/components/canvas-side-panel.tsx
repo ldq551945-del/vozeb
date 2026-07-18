@@ -104,7 +104,7 @@ function CanvasNodesTab({ nodes, selectedNodeIds, onFocusNode, onExport }: { nod
         if (!targets.length || exporting) return;
         setExporting(true);
         try {
-            await exportCanvasNodes(targets, `VOZEB-画布元素-${targets.length}`);
+            await exportCanvasNodes(targets, `DQ-画布元素-${targets.length}`);
             onExport(targets.length);
             setChecked(new Set());
             setSelectMode(false);

@@ -188,8 +188,7 @@ const DEFAULT_SITE_SOCIALS: SiteSocialSettings = {
 };
 
 const DEFAULT_SITE_FRIEND_LINKS: SiteFriendLink[] = [
-    { id: "vozeb-home", label: "VOZEB", url: "https://www.vozeb.com/", enabled: true },
-    { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
+        { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
 ];
 
 export type MailSettings = {
@@ -317,12 +316,12 @@ export const DEFAULT_USER_POINTS = 100;
 export const DEFAULT_CHECK_IN_REWARD_POINTS = 5;
 const DEFAULT_MODEL_POINT_COST_KEY = "__default__";
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-    title: "VOZEB",
+    title: "DQ",
     logoUrl: "/logo.svg",
-    seoTitle: "VOZEB",
-    seoDescription: "面向 AI 图片创作与管理的 VOZEB 工作台",
-    seoKeywords: "VOZEB,AI 绘图,无限画布,提示词库,素材管理",
-    footerCopyright: "© 2026 VOZEB. All rights reserved.",
+    seoTitle: "DQ",
+    seoDescription: "面向 AI 创作与管理的 DQ 工作台",
+    seoKeywords: "DQ,AI 绘图,无限画布,提示词库,素材管理",
+    footerCopyright: "© 2026 DQ. All rights reserved.",
     termsUrl: "/terms",
     privacyUrl: "/privacy",
     homeShowcaseMode: "random",
@@ -338,7 +337,7 @@ export const DEFAULT_MAIL_SETTINGS: MailSettings = {
     username: "",
     password: "",
     fromEmail: "",
-    fromName: "VOZEB",
+    fromName: "DQ",
 };
 const DEFAULT_GENERATION_POINT_MULTIPLIERS: GenerationPointMultipliers = {
     imageQuality: { auto: 1, low: 1, medium: 1, high: 1 },
@@ -1197,8 +1196,8 @@ function normalizeGenerationConcurrency(settings: Partial<GenerationConcurrencyS
 }
 
 function normalizeSiteSettings(settings: Partial<SiteSettings> | undefined): SiteSettings {
-    const title = normalizeText(settings?.title, DEFAULT_SITE_SETTINGS.title, 40);
-    const seoTitle = normalizeText(settings?.seoTitle, title, 72);
+    const title = "DQ";
+    const seoTitle = "DQ";
     return {
         title,
         logoUrl: normalizeLogoUrl(settings?.logoUrl),
@@ -1253,7 +1252,7 @@ function normalizeSiteFriendLinks(settings: unknown): SiteFriendLink[] {
                 enabled: value.enabled !== false,
             };
         })
-        .filter((link) => link.url)
+        .filter((link) => link.url && !/(github|vozeb|csyqlz)/i.test(link.url))
         .slice(0, 12);
     for (const link of DEFAULT_SITE_FRIEND_LINKS) {
         if (normalized.some((item) => item.id === link.id || item.url.replace(/\/$/, "") === link.url.replace(/\/$/, ""))) continue;
@@ -1280,11 +1279,9 @@ function normalizeSiteSocials(settings: Partial<SiteSocialSettings> | undefined)
 
 function normalizeSiteSocial(key: SiteSocialKey, setting: Partial<SiteSocialSettings[SiteSocialKey]> | undefined) {
     const fallback = DEFAULT_SITE_SOCIALS[key];
-    return {
-        enabled: setting?.enabled !== false,
-        label: normalizeText(setting?.label, fallback.label, 32),
-        url: normalizeLinkUrl(setting?.url, fallback.url),
-    };
+    const url = normalizeLinkUrl(setting?.url, fallback.url);
+    const hidden = /(github|vozeb|csyqlz)/i.test(url);
+    return { enabled: !hidden && setting?.enabled !== false, label: normalizeText(setting?.label, fallback.label, 32), url: hidden ? "" : url };
 }
 
 function normalizeMailSettings(settings: Partial<MailSettings> | undefined): MailSettings {

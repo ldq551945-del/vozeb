@@ -3,14 +3,13 @@
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Gift, Keyboard, LogOut, ShieldCheck, UserCircle, X } from "lucide-react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
 import { App, Button, Drawer, Dropdown, Input, Pagination, Popover, Spin, Tag } from "antd";
 
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
-import { GitHubLink } from "@/components/layout/github-link";
+import { SystemStatusPopover } from "@/components/layout/system-status-popover";
 import { CreditSymbol, formatCreditAmount } from "@/constant/credits";
 import { cn } from "@/lib/utils";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -37,8 +36,6 @@ type PointRecord = {
     createdAt: string;
 };
 
-const loadVersionReleaseModal = () => import("@/components/layout/version-release-modal").then((module) => module.VersionReleaseModal);
-const VersionReleaseModal = dynamic(loadVersionReleaseModal, { ssr: false, loading: () => null });
 const POINT_RECORD_PAGE_SIZE = 10;
 
 export function UserStatusActions({ variant = "default", onOpenShortcuts }: UserStatusActionsProps) {
@@ -59,7 +56,6 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
     const theme = useThemeStore((state) => state.theme);
     const setTheme = useThemeStore((state) => state.setTheme);
     const canvasTheme = canvasThemes[theme];
-    const showAdminMetaActions = user?.role === "admin";
     const defaultControlClass =
         "inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-stone-200 bg-white/85 text-sm font-medium text-stone-700 shadow-sm shadow-stone-950/5 transition hover:border-stone-300 hover:bg-stone-50 hover:text-stone-950 dark:border-stone-800 dark:bg-stone-950/35 dark:text-stone-200 dark:shadow-black/15 dark:hover:border-stone-700 dark:hover:bg-stone-900 dark:hover:text-white";
     const canvasControlClass =
@@ -76,10 +72,6 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
             : undefined;
     const naturalIconClass = variant === "canvas" ? canvasIconClass : cn(defaultControlClass, "w-8 px-0 [&_svg]:size-4");
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? canvasControlStyle : undefined;
-    const versionStyle = iconStyle;
-    const versionClassName = variant === "canvas" ? cn(canvasControlClass, "px-2.5 text-xs font-semibold") : cn(defaultControlClass, "hidden px-2.5 text-xs font-semibold lg:inline-flex");
-    const gitHubClassName = variant === "canvas" ? cn(canvasIconClass, "text-base") : cn(defaultControlClass, "hidden w-8 px-0 text-base lg:inline-flex");
-    const gitHubStyle = iconStyle;
     const showCheckIn = variant !== "canvas";
     const checkInLabel = checkingIn ? "签到中" : user?.checkedInToday ? "已签到" : "签到";
     const compactCheckInLabel = checkInLabel;
@@ -122,12 +114,6 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
         }
     }, [router, user]);
 
-    useEffect(() => {
-        if (!showAdminMetaActions) return;
-        return preloadOnIdle(() => {
-            void loadVersionReleaseModal();
-        });
-    }, [showAdminMetaActions]);
 
     useEffect(() => {
         const mediaQuery = window.matchMedia("(max-width: 520px)");
@@ -282,12 +268,7 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
                 aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                 title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
             />
-            {showAdminMetaActions ? (
-                <span className={cn("canvas-admin-meta-actions inline-flex items-center", variant === "canvas" ? "gap-1" : "gap-2")}>
-                    <VersionReleaseModal className={versionClassName} style={versionStyle} />
-                    <GitHubLink className={gitHubClassName} style={gitHubStyle} />
-                </span>
-            ) : null}
+            <SystemStatusPopover className={naturalIconClass} style={iconStyle} />
             {user ? (
                 <>
                     <Dropdown {...(variant === "canvas" ? { open: accountOpen, onOpenChange: handleAccountOpenChange } : {})} menu={{ items: accountItems, onClick: handleAccountMenuClick }} trigger={["click"]} placement="bottomRight">
@@ -497,15 +478,4 @@ function splitPointRecordDescription(description: string) {
     if (!action) return { model: text, action: "" };
     const model = text.slice(0, -action.length).trim();
     return { model: model || "模型", action };
-}
-
-function preloadOnIdle(task: () => void) {
-    const idleWindow = window as Window & {
-        requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-        cancelIdleCallback?: (handle: number) => void;
-    };
-    const idleId = idleWindow.requestIdleCallback?.(task, { timeout: 2500 });
-    if (idleId !== undefined) return () => idleWindow.cancelIdleCallback?.(idleId);
-    const timer = window.setTimeout(task, 1200);
-    return () => window.clearTimeout(timer);
 }

@@ -1684,7 +1684,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                     <SectionTitle icon={<Globe2 className="size-4" />} title="基础信息" />
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <LabeledControl label="网站标题">
-                                            <Input value={settings.site.title} maxLength={40} placeholder="VOZEB" onChange={(event) => updateSiteSetting("title", event.target.value)} />
+                                            <Input value={settings.site.title} maxLength={40} placeholder="DQ" onChange={(event) => updateSiteSetting("title", event.target.value)} />
                                         </LabeledControl>
                                         <LabeledControl label="Logo URL">
                                             <div className="flex gap-2">
@@ -1709,7 +1709,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                                 <Input.TextArea value={settings.site.seoDescription} maxLength={180} rows={4} placeholder="用于搜索结果和社交分享摘要" onChange={(event) => updateSiteSetting("seoDescription", event.target.value)} />
                                             </LabeledControl>
                                             <LabeledControl label="SEO 关键词">
-                                                <Input value={settings.site.seoKeywords} maxLength={240} placeholder="VOZEB,AI 绘图,无限画布" onChange={(event) => updateSiteSetting("seoKeywords", event.target.value)} />
+                                                <Input value={settings.site.seoKeywords} maxLength={240} placeholder="DQ,AI 绘图,无限画布" onChange={(event) => updateSiteSetting("seoKeywords", event.target.value)} />
                                             </LabeledControl>
                                         </div>
                                     </div>
@@ -1802,7 +1802,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                     </div>
                                     <div className="mt-5 space-y-4">
                                         <LabeledControl label="版权所有">
-                                            <Input value={settings.site.footerCopyright} maxLength={120} placeholder="© 2026 VOZEB. All rights reserved." onChange={(event) => updateSiteSetting("footerCopyright", event.target.value)} />
+                                            <Input value={settings.site.footerCopyright} maxLength={120} placeholder="© 2026 DQ. All rights reserved." onChange={(event) => updateSiteSetting("footerCopyright", event.target.value)} />
                                         </LabeledControl>
                                         <div className="grid gap-4 md:grid-cols-2">
                                             <LabeledControl label="使用条款链接">
@@ -1874,7 +1874,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                         <div className="flex items-center gap-3">
                                             <SiteLogoPreview logoUrl={settings.site.logoUrl} />
                                             <div className="min-w-0">
-                                                <div className="truncate text-lg font-semibold">{settings.site.title || "VOZEB"}</div>
+                                                <div className="truncate text-lg font-semibold">{settings.site.title || "DQ"}</div>
                                                 <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">首页导航品牌</div>
                                             </div>
                                         </div>
@@ -1985,7 +1985,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
                                                     <Input value={settings.mail.fromEmail} placeholder="默认使用邮箱账号" onChange={(event) => updateMailSetting("fromEmail", event.target.value)} />
                                                 </LabeledControl>
                                                 <LabeledControl label="发件名称">
-                                                    <Input value={settings.mail.fromName} placeholder="VOZEB" onChange={(event) => updateMailSetting("fromName", event.target.value)} />
+                                                    <Input value={settings.mail.fromName} placeholder="DQ" onChange={(event) => updateMailSetting("fromName", event.target.value)} />
                                                 </LabeledControl>
                                             </div>
                                             <LabeledControl label="测试收件邮箱">
@@ -3672,7 +3672,7 @@ function SystemChannelEditor({
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)_minmax(220px,0.8fr)]">
                 <LabeledControl label="渠道名称">
-                    <Input value={channel.name} placeholder="青岩智影、123NHH、VOZEB、自定义接口" onChange={(event) => onChange({ name: event.target.value })} />
+                    <Input value={channel.name} placeholder="接口名称，例如：图像服务" onChange={(event) => onChange({ name: event.target.value })} />
                 </LabeledControl>
                 <LabeledControl label="Base URL">
                     <Input value={channel.baseUrl} placeholder="https://api.example.com/v1" onChange={(event) => onChange({ baseUrl: event.target.value })} />
@@ -4131,7 +4131,7 @@ function cdkStatusTone(code: PublicCdkCode) {
 
 function formatCreatedCdkExport(codes: CreatedCdkCode[]) {
     const lines = [
-        "VOZEB CDK 导出",
+        "DQ CDK 导出",
         `导出时间：${new Date().toLocaleString("zh-CN", { hour12: false })}`,
         `数量：${codes.length}`,
         "",

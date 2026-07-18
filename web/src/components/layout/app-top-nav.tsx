@@ -21,7 +21,7 @@ export function AppTopNav() {
     const pathname = usePathname();
     const router = useRouter();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
-    const [site, setSite] = useState<PublicSiteSettings>({ title: "VOZEB", logoUrl: "/logo.svg" });
+    const [site, setSite] = useState<PublicSiteSettings>({ title: "DQ", logoUrl: "/logo.svg" });
     const setUser = useUserStore((state) => state.setUser);
     const setConfig = useConfigStore((state) => state.setConfig);
     const hideHeader = /^\/canvas\/[^/]+/.test(pathname);
@@ -38,7 +38,7 @@ export function AppTopNav() {
                     }>,
             )
             .then((payload) => {
-                if (payload.settings?.site) setSite(payload.settings.site);
+                if (payload.settings?.site) setSite({ ...payload.settings.site, title: "DQ" });
                 if (payload.user) setUser(payload.user);
                 setConfig(applyPublicSystemSettings(useConfigStore.getState().config, payload.settings));
             })
@@ -53,7 +53,7 @@ export function AppTopNav() {
                         <div className="flex min-w-0 items-center justify-start overflow-hidden">
                             <Link href="/" className="flex h-full min-w-0 items-center gap-2.5 text-sm font-semibold leading-none tracking-tight text-stone-950 transition hover:text-stone-600 dark:text-stone-100 dark:hover:text-stone-300">
                                 <SiteLogo logoUrl={site.logoUrl} className="size-9" />
-                                <span className="max-w-[24vw] truncate text-xl font-semibold sm:max-w-[30vw] lg:max-w-none">{site.title || "VOZEB"}</span>
+                                <span className="max-w-[24vw] truncate text-xl font-semibold sm:max-w-[30vw] lg:max-w-none">{site.title || "DQ"}</span>
                             </Link>
 
                             <button

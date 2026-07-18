@@ -40,7 +40,7 @@ export default function PrivacyPage() {
                     <div className="border-b border-stone-200 bg-stone-950 px-6 py-8 text-white sm:px-8 dark:border-white/10 dark:bg-white/[0.06]">
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-emerald-100">
                             <ShieldCheck className="size-3.5" />
-                            VOZEB Privacy
+                            DQ Privacy
                         </div>
                         <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">隐私政策</h1>
                         <p className="mt-4 max-w-2xl text-base leading-8 text-stone-200 dark:text-stone-300">这里说明 VOZEB 在账号、邮箱、模型请求和备份文件中的数据处理方式，方便部署者和使用者提前了解边界。</p>

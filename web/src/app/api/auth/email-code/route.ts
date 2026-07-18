@@ -31,8 +31,8 @@ export async function POST(request: Request) {
         await sendSmtpMail({
             mail: settings.mail,
             to: email,
-            subject: `VOZEB ${purposeText[purpose]}验证码`,
-            text: [`你的 VOZEB ${purposeText[purpose]}验证码是：${code}`, "", "验证码 10 分钟内有效，请勿转发给他人。"].join("\r\n"),
+            subject: `DQ ${purposeText[purpose]}验证码`,
+            text: [`你的 DQ ${purposeText[purpose]}验证码是：${code}`, "", "验证码 10 分钟内有效，请勿转发给他人。"].join("\r\n"),
         });
         return NextResponse.json({ ok: true });
     } catch (error) {

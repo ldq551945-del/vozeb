@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
     const iconUrl = site.logoUrl || "/icon.svg";
     return {
         metadataBase: siteMetadataBase(),
-        title: site.seoTitle || site.title,
+        title: "DQ",
         description: site.seoDescription,
         keywords: site.seoKeywords
             .split(/[,，]/)
@@ -30,9 +30,9 @@ export async function generateMetadata(): Promise<Metadata> {
             shortcut: iconUrl,
         },
         openGraph: {
-            title: site.seoTitle || site.title,
+            title: "DQ",
             description: site.seoDescription,
-            siteName: site.title,
+            siteName: "DQ",
             images: iconUrl ? [{ url: iconUrl }] : undefined,
         },
     };
@@ -55,7 +55,7 @@ export default function RootLayout({
                     id="theme-script"
                     strategy="beforeInteractive"
                     dangerouslySetInnerHTML={{
-                        __html: `try{var p="vozeb",l="in"+"finite-canvas";var s=JSON.parse(localStorage.getItem(p+":theme_store")||localStorage.getItem(l+":theme_store")||"{}");var t=s.state&&s.state.theme==="dark"?"dark":"light";document.documentElement.classList.toggle("dark",t==="dark");document.documentElement.style.colorScheme=t}catch(e){}`,
+                        __html: `try{var p="dq",l="in"+"finite-canvas";var s=JSON.parse(localStorage.getItem(p+":theme_store")||localStorage.getItem(l+":theme_store")||"{}");var t=s.state&&s.state.theme==="dark"?"dark":"light";document.documentElement.classList.toggle("dark",t==="dark");document.documentElement.style.colorScheme=t}catch(e){}`,
                     }}
                 />
                 <AntdRegistry>

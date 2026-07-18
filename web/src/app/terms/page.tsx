@@ -40,7 +40,7 @@ export default function TermsPage() {
                     <div className="border-b border-stone-200 bg-stone-950 px-6 py-8 text-white sm:px-8 dark:border-white/10 dark:bg-white/[0.06]">
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-cyan-100">
                             <Scale className="size-3.5" />
-                            VOZEB Legal
+                            DQ Legal
                         </div>
                         <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">使用条款</h1>
                         <p className="mt-4 max-w-2xl text-base leading-8 text-stone-200 dark:text-stone-300">使用、部署或二次开发 VOZEB 前，请确认你已理解开源协议、服务配置责任、内容合规和升级备份要求。</p>

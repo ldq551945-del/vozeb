@@ -27,7 +27,7 @@ export function MobileNavDrawer({ open, activeToolSlug, onClose }: MobileNavDraw
                             WebkitMask: "url(/logo.svg) center / contain no-repeat",
                         }}
                     />
-                    <span>VOZEB</span>
+                    <span>DQ</span>
                 </Link>
             }
             placement="left"

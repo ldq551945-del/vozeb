@@ -83,8 +83,8 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
                 {headerSlot}
                 <div className="auth-form-header">
                     <p className="auth-form-kicker text-sm font-medium text-cyan-600 dark:text-cyan-300">{firstUser ? "首次设置" : isRegister ? "创建账号" : "账号访问"}</p>
-                    <h2 className={cn("mt-2 font-semibold tracking-normal text-stone-950 dark:text-white", variant === "embedded" ? "text-2xl" : "text-3xl")}>{firstUser ? "创建第一个管理员账号" : isRegister ? "注册后进入 VOZEB" : "登录进入 VOZEB"}</h2>
-                    <p className="auth-form-description mt-3 text-sm leading-6 text-stone-500 dark:text-stone-400">{isRegister ? "创建账号后即可进入 VOZEB。" : "登录后继续你的画布、素材和提示词工作流。"}</p>
+                    <h2 className={cn("mt-2 font-semibold tracking-normal text-stone-950 dark:text-white", variant === "embedded" ? "text-2xl" : "text-3xl")}>{firstUser ? "创建第一个管理员账号" : isRegister ? "注册后进入 DQ" : "登录进入 DQ"}</h2>
+                    <p className="auth-form-description mt-3 text-sm leading-6 text-stone-500 dark:text-stone-400">{isRegister ? "创建账号后即可进入 DQ。" : "登录后继续你的画布、素材和提示词工作流。"}</p>
                 </div>
 
                 {authError ? <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-100">{authError}</div> : null}
@@ -204,7 +204,7 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
                                     WebkitMask: "url(/logo.svg) center / contain no-repeat",
                                 }}
                             />
-                            <span className="text-3xl">VOZEB</span>
+                            <span className="text-3xl">DQ</span>
                         </Link>
                         <Link
                             href="/"
@@ -215,7 +215,7 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
                         </Link>
                     </div>
                     <div className="auth-page-brand-copy">
-                        <h1 className="text-balance text-2xl font-semibold tracking-normal sm:text-3xl">{firstUser ? "创建第一个管理员账号" : isRegister ? "创建你的 VOZEB 账号" : "继续你的 VOZEB 创作"}</h1>
+                        <h1 className="text-balance text-2xl font-semibold tracking-normal sm:text-3xl">{firstUser ? "创建第一个管理员账号" : isRegister ? "创建你的 DQ 账号" : "继续你的 DQ 创作"}</h1>
                     </div>
                     <div className="auth-page-feature-list grid gap-2 text-sm text-stone-600 dark:text-stone-300">
                         {["画布与素材自动保留", "提示词与模型集中管理", "管理员后台统一配置"].map((item) => (

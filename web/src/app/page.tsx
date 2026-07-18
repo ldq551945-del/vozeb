@@ -64,16 +64,15 @@ const defaultSite: {
     friendLinks: SiteFriendLink[];
     socials: SiteSocialSettings;
 } = {
-    title: "VOZEB",
+    title: "DQ",
     logoUrl: "/logo.svg",
-    seoDescription: "面向 AI 图片创作与管理的 VOZEB 工作台",
-    footerCopyright: "© 2026 VOZEB. All rights reserved.",
+    seoDescription: "面向 AI 创作与管理的 DQ 工作台",
+    footerCopyright: "© 2026 DQ. All rights reserved.",
     termsUrl: "/terms",
     privacyUrl: "/privacy",
     homeShowcaseMode: "random",
     homeShowcaseItems: [],
     friendLinks: [
-        { id: "vozeb-home", label: "VOZEB", url: "https://www.vozeb.com/", enabled: true },
         { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
     ],
     socials: {
@@ -182,7 +181,7 @@ export default function HomePage() {
                 if (cancelled) return;
                 setUser(data.user || null);
                 if (data.settings?.site) {
-                    const nextSite = { ...defaultSite, ...data.settings.site };
+                    const nextSite = { ...defaultSite, ...data.settings.site, title: "DQ", friendLinks: (data.settings.site.friendLinks || []).filter((link) => !/(github|vozeb|csyqlz)/i.test(link.url)) };
                     setSite(nextSite);
                     if (nextSite.homeShowcaseMode === "custom") {
                         showcaseRequestedRef.current = true;
@@ -265,7 +264,7 @@ export default function HomePage() {
                 <div className="mx-auto grid h-20 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
                     <Link href="/" className="inline-flex min-w-0 items-center gap-3 text-stone-950 dark:text-white">
                         <SiteLogo logoUrl={site.logoUrl} className="size-9 bg-stone-950 dark:bg-white" />
-                        <span className="truncate text-xl font-semibold tracking-normal">{site.title || "VOZEB"}</span>
+                        <span className="truncate text-xl font-semibold tracking-normal">{site.title || "DQ"}</span>
                     </Link>
                     <nav className="landing-nav-pill hidden items-center gap-1 text-sm font-medium text-stone-700 md:flex dark:text-stone-300">
                         {navigationTools.slice(0, 4).map((tool) => (
@@ -287,7 +286,7 @@ export default function HomePage() {
                 <div className="landing-hero-copy relative z-10 mx-auto w-full max-w-7xl text-center">
                     <div className="hero-title-stage">
                         <div className="hero-title-wrap">
-                            <h1 className="ai-title-aurora max-w-6xl text-balance text-7xl font-semibold tracking-normal sm:text-8xl lg:text-[9rem] xl:text-[11rem]">{site.title || "VOZEB"}</h1>
+                            <h1 className="ai-title-aurora max-w-6xl text-balance text-7xl font-semibold tracking-normal sm:text-8xl lg:text-[9rem] xl:text-[11rem]">{site.title || "DQ"}</h1>
                             <span className="hero-version-badge inline-flex items-center gap-2 rounded-lg border border-cyan-300/45 bg-white/82 px-3.5 py-2 text-sm font-semibold text-stone-700 shadow-sm shadow-cyan-950/5 dark:border-cyan-200/20 dark:bg-cyan-200/8 dark:text-cyan-100">
                                 <Sparkles className="size-4" />
                                 {APP_VERSION} 创作入口
@@ -298,7 +297,7 @@ export default function HomePage() {
                     <p className="mx-auto mt-5 max-w-4xl text-balance text-lg leading-8 text-stone-500 sm:text-xl sm:leading-9 dark:text-stone-300">
                         在{" "}
                         <Highlighter action="underline" color="#FF9800">
-                            {site.title || "VOZEB"}
+                            {site.title || "DQ"}
                         </Highlighter>{" "}
                         中生成、连接和重组{" "}
                         <Highlighter action="highlight" color="#87CEFA">
@@ -420,7 +419,7 @@ export default function HomePage() {
                     <div className="landing-footer-brand min-w-0">
                         <SiteLogo logoUrl={site.logoUrl} className="landing-footer-logo bg-stone-950 dark:bg-white" />
                         <div className="landing-footer-brand-copy min-w-0">
-                            <div className="landing-footer-title truncate text-base font-semibold text-stone-950 dark:text-white">{site.title || "VOZEB"}</div>
+                            <div className="landing-footer-title truncate text-base font-semibold text-stone-950 dark:text-white">{site.title || "DQ"}</div>
                             <div className="landing-footer-copyright mt-1 text-sm text-stone-500 dark:text-stone-400">{site.footerCopyright}</div>
                         </div>
                     </div>
@@ -481,10 +480,10 @@ export default function HomePage() {
                     <section className="landing-auth-modal-brand">
                         <div className="inline-flex items-center gap-3 text-stone-950 dark:text-white">
                             <SiteLogo logoUrl={site.logoUrl} className="landing-auth-brand-logo bg-stone-950 dark:bg-white" />
-                            <span className="text-2xl font-semibold">{site.title || "VOZEB"}</span>
+                            <span className="text-2xl font-semibold">{site.title || "DQ"}</span>
                         </div>
                         <div className="landing-auth-modal-copy">
-                            <p className="text-sm font-medium text-cyan-700 dark:text-cyan-200">VOZEB Access</p>
+                            <p className="text-sm font-medium text-cyan-700 dark:text-cyan-200">DQ Access</p>
                             <h2 className="mt-3 text-3xl font-semibold leading-tight text-stone-950 dark:text-white">继续你的创作现场</h2>
                             <p className="mt-4 text-sm leading-7 text-stone-500 dark:text-stone-300">登录后进入画布、素材、模型和提示词库。</p>
                         </div>

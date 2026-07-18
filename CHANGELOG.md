@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- [Adjust] DQ branding, hidden upstream links, and clickable system status popover.
+
 - [新增] 画布新增可收起和调宽的侧栏，支持节点搜索、聚焦、批量导出和素材快速插入。
 
 ## v1.0.0 - 2026-07-09
