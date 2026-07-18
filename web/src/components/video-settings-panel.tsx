@@ -81,20 +81,6 @@ export function videoModelHint(model: string) {
     return isGrokVideoModel(model) ? "Grok 视频支持文生视频；使用参考图时仅支持 1 张作为首帧，不支持参考视频或参考音频。" : "";
 }
 
-function SettingGroup({ title, color, children }: { title: string; color: string; children: ReactNode }) {
-    return <div className="space-y-2.5"><div className="text-xs font-medium" style={{ color }}>{title}</div>{children}</div>;
-}
-
-function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
-    return <button type="button" disabled={disabled} className="h-9 cursor-pointer rounded-full border px-2 text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-35" style={{ background: "transparent", borderColor: selected ? theme.node.text : theme.node.stroke, color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onClick={onClick}>{children}</button>;
-}
-
-function SizePreview({ width, height, color }: { width: number; height: number; color: string }) {
-    const ratio = width / height;
-    const previewWidth = ratio >= 1 ? 30 : Math.max(14, Math.round(30 * ratio));
-    const previewHeight = ratio >= 1 ? Math.max(14, Math.round(30 / ratio)) : 30;
-    return <span className="block rounded-[3px] border" style={{ width: previewWidth, height: previewHeight, borderColor: color }} />;
-}
 
 function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
     const model = modelOptionName(config.model || config.videoModel);
@@ -193,7 +179,7 @@ function videoSecondOptionsFromConfig(config: AiConfig, allowAuto = false, maxSe
 
 
 export function normalizeVideoResolutionValue(value: string) {
-    if (value === "480p" || value === "low") return "480";
+    if (value === "480p" || value === "low") return "720";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
     return value.replace(/p$/i, "") || "720";
 }
