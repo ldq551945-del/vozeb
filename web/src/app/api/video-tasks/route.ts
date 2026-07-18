@@ -22,6 +22,11 @@ export async function POST(request: Request) {
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     if (!config || !prompt) return NextResponse.json({ error: "视频任务参数不完整" }, { status: 400 });
     if (!/^\/api\/ai\/system\/[^/]+$/.test(config.baseUrl)) return NextResponse.json({ error: "视频必须使用系统渠道" }, { status: 400 });
+    const channelId = config.baseUrl.split("/").filter(Boolean).pop() || "";
+    const channel = settings.systemChannels.find((item) => item.id === channelId);
+    const fallbackModel = channel?.advancedConfig?.videoModel?.trim() || channel?.models?.find((item) => /video|grok|seedance|kling|sora|veo/i.test(item))?.trim() || channel?.models?.[0]?.trim() || "";
+    config.model = config.model.trim() || fallbackModel;
+    if (!config.model) return NextResponse.json({ error: "管理员尚未配置视频模型" }, { status: 400 });
     const task = createVideoTask({ userId: user.id, config, prompt, references: Array.isArray(body.references) ? body.references.slice(0, 1) : [] });
     const origin = resolveInternalOrigin(new URL(request.url).origin);
     const cookie = request.headers.get("cookie") || "";
@@ -30,13 +35,13 @@ export async function POST(request: Request) {
 }
 
 function sanitizeConfig(input?: Partial<VideoTaskConfig>): VideoTaskConfig | null {
-    if (!input || input.apiSource !== "system" || typeof input.baseUrl !== "string" || typeof input.model !== "string") return null;
+    if (!input || input.apiSource !== "system" || typeof input.baseUrl !== "string" || (input.model !== undefined && typeof input.model !== "string")) return null;
     return {
         apiSource: "system",
         baseUrl: input.baseUrl.trim(),
         apiKey: "system",
         apiFormat: "openai",
-        model: input.model.trim(),
+        model: typeof input.model === "string" ? input.model.trim() : "",
         size: typeof input.size === "string" ? input.size : "9:16",
         vquality: typeof input.vquality === "string" ? input.vquality : "720",
         videoSeconds: typeof input.videoSeconds === "string" ? input.videoSeconds : "10",
@@ -46,6 +51,7 @@ function sanitizeConfig(input?: Partial<VideoTaskConfig>): VideoTaskConfig | nul
 
 async function runVideoTask(task: VideoTask, origin: string, cookie: string) {
     updateVideoTask(task.id, { status: "running" });
+    console.info("DQ video task dispatch", { taskId: task.id, model: task.config.model, baseUrl: task.config.baseUrl });
     try {
         const createUrl = `${origin}${task.config.baseUrl}/v1/videos`;
         const form = new FormData();
@@ -74,6 +80,7 @@ async function runVideoTask(task: VideoTask, origin: string, cookie: string) {
         updateVideoTask(task.id, { upstreamId: id });
         await pollVideoTask(task, origin, cookie, id);
     } catch (error) {
+        console.error("DQ video task failed", { taskId: task.id, model: task.config.model, error: error instanceof Error ? error.message : String(error) });
         updateVideoTask(task.id, { status: "error", error: error instanceof Error ? error.message : "视频生成失败" });
     }
 }
