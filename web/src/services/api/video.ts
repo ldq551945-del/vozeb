@@ -1024,7 +1024,7 @@ function readHeader(headers: unknown, key: string) {
 function assertVideoConfig(config: AiConfig, model: string) {
     if (!model) throw new Error("请先配置视频模型");
     if (!config.baseUrl.trim()) throw new Error("请先配置 Base URL");
-    if (!config.apiKey.trim()) throw new Error("请先配置 API Key");
+    if (!config.apiKey.trim()) throw new Error("请联系管理员检查服务配置");
     if (config.apiFormat === "gemini") throw new Error("Gemini 暂不支持视频生成，请使用 OpenAI 兼容渠道");
 }
 
@@ -1094,7 +1094,7 @@ function prefixedVideoError(message: string, prefix: string) {
 }
 
 function statusMessage(status: number | undefined, fallback: string) {
-    if (status === 401 || status === 403) return "鉴权失败，请检查 API Key、套餐权限或模型权限";
+    if (status === 401 || status === 403) return "服务暂时无法使用，请联系管理员检查配置和权限";
     if (status === 429) return "请求被限流或额度不足，请稍后重试";
     return status ? `${fallback}（${status}）` : fallback;
 }

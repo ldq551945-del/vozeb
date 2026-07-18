@@ -26,8 +26,8 @@ export async function sendSmtpTestMail({ mail, to }: SendTestMailInput) {
     await sendSmtpMail({
         mail,
         to: recipient,
-        subject: "VOZEB 邮箱服务测试",
-        text: ["这是一封来自 VOZEB 管理后台的测试邮件。", "", "如果你收到这封邮件，说明 SMTP 配置可以正常发送。"].join("\r\n"),
+        subject: "DQ 邮箱服务测试",
+        text: ["这是一封来自 DQ 管理端的测试邮件。", "", "如果你收到这封邮件，说明邮箱设置可以正常发送。"].join("\r\n"),
     });
 }
 

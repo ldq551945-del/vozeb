@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Gift, Keyboard, LogOut, ShieldCheck, UserCircle, X } from "lucide-react";
+import { Gift, Keyboard, LogOut, UserCircle, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { MenuProps } from "antd";
@@ -85,19 +85,6 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
                 </Link>
             ),
         },
-        ...(user?.role === "admin"
-            ? [
-                  {
-                      key: "admin",
-                      icon: <ShieldCheck className="size-4" />,
-                      label: (
-                          <Link href="/admin" prefetch onMouseEnter={() => router.prefetch("/admin")} onFocus={() => router.prefetch("/admin")}>
-                              管理员后台
-                          </Link>
-                      ),
-                  },
-              ]
-            : []),
         {
             key: "logout",
             icon: <LogOut className="size-4" />,
@@ -107,7 +94,6 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
     ];
 
     useEffect(() => {
-        if (user?.role === "admin") router.prefetch("/admin");
         if (user) {
             router.prefetch("/canvas");
             router.prefetch("/profile");

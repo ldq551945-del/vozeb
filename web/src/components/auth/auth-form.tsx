@@ -218,7 +218,7 @@ export function AuthForm({ mode, nextPath = "/canvas", registrationEnabled = tru
                         <h1 className="text-balance text-2xl font-semibold tracking-normal sm:text-3xl">{firstUser ? "创建第一个管理员账号" : isRegister ? "创建你的 DQ 账号" : "继续你的 DQ 创作"}</h1>
                     </div>
                     <div className="auth-page-feature-list grid gap-2 text-sm text-stone-600 dark:text-stone-300">
-                        {["画布与素材自动保留", "提示词与模型集中管理", "管理员后台统一配置"].map((item) => (
+                        {["画布与素材自动保留", "提示词与模型集中管理", "创作服务集中配置"].map((item) => (
                             <div key={item} className="flex items-center gap-2">
                                 <span className="size-1.5 rounded-full bg-cyan-400" />
                                 <span>{item}</span>

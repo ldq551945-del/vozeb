@@ -3,7 +3,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Gauge, Image as ImageIcon, Layers3, Mail, Send, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, Gauge, Image as ImageIcon, Layers3, Mail, MessageCircle, Send, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
 import { Button, Image, Modal, Tag } from "antd";
 
 import { AuthForm } from "@/components/auth/auth-form";
@@ -33,9 +33,9 @@ type SessionPayload = {
     };
 };
 
-type SiteSocialKey = "email" | "telegram" | "x" | "instagram";
+type SiteSocialKey = "email" | "telegram" | "x" | "wechat";
 
-type SiteSocialSettings = Record<SiteSocialKey, { enabled: boolean; label: string; url: string }>;
+type SiteSocialSettings = Record<SiteSocialKey, { enabled: boolean; label: string; url: string; showLabel?: boolean }>;
 type SiteFriendLink = { id: string; label: string; url: string; enabled: boolean };
 type SiteShowcaseMode = "random" | "custom";
 type SiteShowcaseItem = { id: string; title: string; coverUrl: string; prompt: string; tags: string[]; category: string };
@@ -48,8 +48,8 @@ const featureItems = [
 
 const heroStats = [
     { icon: ImageIcon, value: "874+", label: "远程封面提示词" },
-    { icon: Gauge, value: "1 CPU", label: "低配构建模式" },
-    { icon: ShieldCheck, value: ".data", label: "账号数据持久化" },
+    { icon: Gauge, value: "响应", label: "急速响应" },
+    { icon: ShieldCheck, value: "安全", label: "数据保护" },
 ];
 
 const defaultSite: {
@@ -73,13 +73,13 @@ const defaultSite: {
     homeShowcaseMode: "random",
     homeShowcaseItems: [],
     friendLinks: [
-        { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
+        { id: "xianyu", label: "咸鱼", url: "https://www.goofish.com/", enabled: true },
     ],
     socials: {
-        email: { enabled: true, label: "邮箱联系", url: "mailto:contact@example.com" },
-        telegram: { enabled: true, label: "Telegram", url: "https://t.me/vozeb" },
-        x: { enabled: true, label: "X", url: "https://x.com/vozeb" },
-        instagram: { enabled: true, label: "Instagram", url: "https://instagram.com/vozeb" },
+        email: { enabled: true, label: "邮箱联系", url: "mailto:dq-contact@qq.com" },
+        telegram: { enabled: false, label: "Telegram", url: "" },
+        x: { enabled: false, label: "X", url: "" },
+        wechat: { enabled: false, label: "联系反馈", url: "", showLabel: true },
     } satisfies SiteSocialSettings,
 };
 
@@ -87,7 +87,7 @@ const socialIconByKey: Record<SiteSocialKey, ReactNode> = {
     email: <Mail className="size-4" />,
     telegram: <Send className="size-4" />,
     x: <span className="text-base font-black leading-none">X</span>,
-    instagram: <span className="text-sm font-black leading-none">IG</span>,
+    wechat: <MessageCircle className="size-4" />,
 };
 
 const publicPrefetchRoutes = ["/login", "/register", "/forgot-password", "/privacy", "/terms"];
@@ -452,7 +452,7 @@ export default function HomePage() {
                                 .map(([key, social]) => (
                                     <Link key={key} href={social.url} className="landing-footer-social" title={social.label} target={social.url.startsWith("/") ? undefined : "_blank"} rel={social.url.startsWith("/") ? undefined : "noreferrer"}>
                                         {socialIconByKey[key as SiteSocialKey]}
-                                        <span className="sr-only">{social.label}</span>
+                                        <span className={social.showLabel ? "text-xs font-medium" : "sr-only"}>{social.label}</span>
                                     </Link>
                                 ))}
                         </div>

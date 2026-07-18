@@ -3,24 +3,29 @@ import { ArrowLeft, Database, KeyRound, MailCheck, ShieldCheck, Workflow } from 
 
 const policies = [
     {
-        title: "账号与配置数据",
-        body: "VOZEB 默认把账号、角色、额度、签到、后台配置、CDK、公告和公共提示词保存在服务端 `.data` 目录；WebDAV 由管理员后台统一接入，用户端不会展示真实连接信息。",
+        title: "我们会保存什么",
+        body: "DQ 可能保存用户名、邮箱、登录状态、积分记录、生成记录、画布内容和你主动提交的素材，用于提供账号、创作和历史记录功能。",
         icon: <Database className="size-5" />,
     },
     {
-        title: "邮箱验证码",
-        body: "开启邮箱注册、修改邮箱或忘记密码时，系统会通过管理员配置的 SMTP 服务发送验证码。验证码仅用于验证当前操作，默认 10 分钟有效，使用后失效。",
+        title: "信息如何使用",
+        body: "这些信息主要用于登录验证、额度计算、保存创作记录、处理反馈和维护账号安全。我们不会因为你使用某个功能而要求提供与该功能无关的额外资料。",
         icon: <MailCheck className="size-5" />,
     },
     {
-        title: "AI 模型请求",
-        body: "AI 生成请求统一经过系统接口代理发送到管理员配置的模型服务或 OpenAI 兼容接口，用户端不会展示真实上游域名或 API Key。部署者仍需确认对应服务商的数据处理规则。",
+        title: "生成内容与第三方服务",
+        body: "当你使用 AI 生成功能时，必要的提示词、参考素材和参数会被发送给用于完成生成的 AI 服务。不同服务的处理规则可能不同，请不要提交不适合分享的敏感信息。",
         icon: <Workflow className="size-5" />,
     },
     {
-        title: "备份文件安全",
-        body: "管理员可以在后台备份 `.data/auth.json` 和 `.data/prompts.json`。请妥善保管备份文件，因为其中可能包含账号邮箱、密码哈希、后台设置和公共提示词数据。",
+        title: "邮箱与安全",
+        body: "注册、修改邮箱或找回密码时，DQ 可能向你填写的邮箱发送验证码。验证码只用于当前操作，并会在有效期结束或使用后失效。请妥善保管账号信息，不要把验证码交给他人。",
         icon: <KeyRound className="size-5" />,
+    },
+    {
+        title: "保存期限与反馈",
+        body: "我们会在提供服务和处理安全问题所需的期限内保存相关信息。你可以通过联系反馈方式咨询账号信息、数据处理或删除请求，管理员会在合理范围内处理。",
+        icon: <ShieldCheck className="size-5" />,
     },
 ];
 
@@ -43,7 +48,7 @@ export default function PrivacyPage() {
                             DQ Privacy
                         </div>
                         <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">隐私政策</h1>
-                        <p className="mt-4 max-w-2xl text-base leading-8 text-stone-200 dark:text-stone-300">这里说明 VOZEB 在账号、邮箱、模型请求和备份文件中的数据处理方式，方便部署者和使用者提前了解边界。</p>
+                        <p className="mt-4 max-w-2xl text-base leading-8 text-stone-200 dark:text-stone-300">这里用简单的方式说明 DQ 如何处理账号、创作内容、邮箱和安全信息。</p>
                     </div>
 
                     <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-2">

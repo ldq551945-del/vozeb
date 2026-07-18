@@ -169,26 +169,22 @@ export type SiteFriendLink = {
     enabled: boolean;
 };
 
-export type SiteSocialKey = "email" | "telegram" | "x" | "instagram";
+export type SiteSocialKey = "email" | "telegram" | "x" | "wechat";
 
 export type SiteSocialSettings = Record<
     SiteSocialKey,
-    {
-        enabled: boolean;
-        label: string;
-        url: string;
-    }
->;
+    { enabled: boolean; label: string; url: string; showLabel?: boolean }
+> & { instagram?: { enabled?: boolean; label?: string; url?: string; showLabel?: boolean } };
 
 const DEFAULT_SITE_SOCIALS: SiteSocialSettings = {
-    email: { enabled: true, label: "邮箱联系", url: "mailto:contact@example.com" },
-    telegram: { enabled: true, label: "Telegram", url: "https://t.me/vozeb" },
-    x: { enabled: true, label: "X", url: "https://x.com/vozeb" },
-    instagram: { enabled: true, label: "Instagram", url: "https://instagram.com/vozeb" },
+    email: { enabled: true, label: "邮箱联系", url: "mailto:dq-contact@qq.com" },
+    telegram: { enabled: false, label: "Telegram", url: "" },
+    x: { enabled: false, label: "X", url: "" },
+    wechat: { enabled: false, label: "联系反馈", url: "", showLabel: true },
 };
 
 const DEFAULT_SITE_FRIEND_LINKS: SiteFriendLink[] = [
-        { id: "linux-do", label: "Linux.do", url: "https://linux.do/", enabled: true },
+        { id: "xianyu", label: "咸鱼", url: "https://www.goofish.com/", enabled: true },
 ];
 
 export type MailSettings = {
@@ -1245,6 +1241,9 @@ function normalizeSiteFriendLinks(settings: unknown): SiteFriendLink[] {
     const normalized = links
         .map((link, index) => {
             const value = link as Partial<SiteFriendLink>;
+            let normalizedUrl = normalizeLinkUrl(value.url, "");
+            while (normalizedUrl.endsWith("/")) normalizedUrl = normalizedUrl.slice(0, -1);
+            if (value.id === "linux-do" && normalizedUrl === "https://linux.do" && value.label === "Linux.do") return DEFAULT_SITE_FRIEND_LINKS[0];
             return {
                 id: normalizeText(value.id, `friend-${index + 1}`, 80),
                 label: normalizeText(value.url?.replace(/\/$/, "") === "https://www.vozeb.com" ? "VOZEB" : value.label, "友情链接", 32),
@@ -1269,11 +1268,12 @@ function normalizeSiteFriendLinks(settings: unknown): SiteFriendLink[] {
 }
 
 function normalizeSiteSocials(settings: Partial<SiteSocialSettings> | undefined): SiteSocialSettings {
+    const emailSetting = settings?.email?.url === "mailto:contact@example.com" ? { ...settings.email, url: DEFAULT_SITE_SOCIALS.email.url } : settings?.email;
     return {
-        email: normalizeSiteSocial("email", settings?.email),
+        email: normalizeSiteSocial("email", emailSetting),
         telegram: normalizeSiteSocial("telegram", settings?.telegram),
         x: normalizeSiteSocial("x", settings?.x),
-        instagram: normalizeSiteSocial("instagram", settings?.instagram),
+        wechat: normalizeSiteSocial("wechat", settings?.wechat || settings?.instagram),
     };
 }
 
@@ -1281,7 +1281,7 @@ function normalizeSiteSocial(key: SiteSocialKey, setting: Partial<SiteSocialSett
     const fallback = DEFAULT_SITE_SOCIALS[key];
     const url = normalizeLinkUrl(setting?.url, fallback.url);
     const hidden = /(github|vozeb|csyqlz)/i.test(url);
-    return { enabled: !hidden && setting?.enabled !== false, label: normalizeText(setting?.label, fallback.label, 32), url: hidden ? "" : url };
+    return { enabled: !hidden && setting?.enabled !== false, label: normalizeText(setting?.label, fallback.label, 32), url: hidden ? "" : url, showLabel: setting?.showLabel ?? fallback.showLabel ?? false };
 }
 
 function normalizeMailSettings(settings: Partial<MailSettings> | undefined): MailSettings {

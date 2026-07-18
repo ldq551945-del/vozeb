@@ -1046,9 +1046,9 @@ function FailedVideoCard({ error, selected, onSelectedChange, onRetry }: { error
 }
 
 function videoFailureDisplay(error: string) {
-    if (error.startsWith("上游生成阶段失败")) return { title: "上游生成失败", hint: "任务已创建，但上游生成阶段失败。" };
-    if (error.startsWith("视频任务创建失败") || error.startsWith("Seedance 任务创建失败")) return { title: "任务创建失败", hint: "本地请求未能成功创建上游任务。" };
-    if (error.startsWith("视频任务查询失败") || error.startsWith("Seedance 任务查询失败")) return { title: "任务查询失败", hint: "任务已提交后，轮询上游状态失败。" };
+    if (error.startsWith("生成服务阶段失败")) return { title: "生成服务失败", hint: "任务已创建，但生成服务阶段失败。" };
+    if (error.startsWith("视频任务创建失败") || error.startsWith("Seedance 任务创建失败")) return { title: "任务创建失败", hint: "请求未能创建生成任务。" };
+    if (error.startsWith("视频任务查询失败") || error.startsWith("Seedance 任务查询失败")) return { title: "任务查询失败", hint: "任务已提交后，查询生成状态失败。" };
     return { title: "生成失败", hint: "请检查模型、额度和接口返回。" };
 }
 

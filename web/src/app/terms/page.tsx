@@ -3,24 +3,29 @@ import { ArrowLeft, CheckCircle2, CloudCog, DatabaseBackup, Scale } from "lucide
 
 const terms = [
     {
-        title: "开源协议与致谢",
-        body: "VOZEB 是面向 AI 创作、无限画布、提示词管理和素材沉淀的开源项目。你可以在遵守 AGPL-3.0 协议和原作者致谢要求的前提下部署、修改和分发。",
+        title: "服务用途",
+        body: "DQ 提供图片、视频、文本和素材创作工具。你可以使用账号保存自己的创作内容，并根据页面显示的额度使用相关功能。",
         icon: <Scale className="size-5" />,
     },
     {
-        title: "服务配置责任",
-        body: "部署者需要自行配置并管理 AI 接口、模型服务、邮箱 SMTP 和第三方存储服务，并遵守对应服务商的条款。由外部接口、模型输出、邮箱服务或部署环境导致的问题，应由部署者自行评估和处理。",
+        title: "账号与额度",
+        body: "请使用真实、可用的信息注册账号，并妥善保管登录凭据。额度和积分按照站点当前规则使用，具体消耗以生成前后的页面提示为准。",
         icon: <CloudCog className="size-5" />,
     },
     {
-        title: "内容与管理规范",
-        body: "管理员可以管理用户、额度、注册策略、邮箱服务、网站信息和公共提示词库。请勿上传、生成或传播违法、侵权、恶意或违反当地法律法规的内容。",
+        title: "内容规范",
+        body: "请勿上传、生成或传播违法、侵权、欺诈、恶意攻击、侵犯他人隐私或违反当地法律法规的内容。你应对自己提交的文字、图片、视频和生成结果负责。",
         icon: <CheckCircle2 className="size-5" />,
     },
     {
-        title: "升级与备份建议",
-        body: "本项目仍处于快速迭代阶段，建议在升级前通过管理员后台备份用户数据库和公共提示词数据，避免迁移或更新时造成重要数据丢失。",
+        title: "服务与反馈",
+        body: "DQ 可能因为维护、升级、网络或不可控因素暂时无法使用。发现问题或需要帮助时，请通过页面提供的联系反馈方式与管理员沟通。",
         icon: <DatabaseBackup className="size-5" />,
+    },
+    {
+        title: "规则调整",
+        body: "服务功能、额度规则和页面内容可能根据运营需要进行调整。重要变化会通过站点公告或页面提示说明；继续使用服务即表示你接受调整后的规则。",
+        icon: <CloudCog className="size-5" />,
     },
 ];
 
@@ -43,7 +48,7 @@ export default function TermsPage() {
                             DQ Legal
                         </div>
                         <h1 className="mt-5 text-4xl font-semibold tracking-tight sm:text-5xl">使用条款</h1>
-                        <p className="mt-4 max-w-2xl text-base leading-8 text-stone-200 dark:text-stone-300">使用、部署或二次开发 VOZEB 前，请确认你已理解开源协议、服务配置责任、内容合规和升级备份要求。</p>
+                        <p className="mt-4 max-w-2xl text-base leading-8 text-stone-200 dark:text-stone-300">使用 DQ 前，请了解账号、额度、内容规范和服务边界。</p>
                     </div>
 
                     <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-2">

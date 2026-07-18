@@ -30,7 +30,7 @@ export default function CanvasPage() {
 
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
-    const agentQuery = agentMode ? `?${searchParams.toString()}` : "";
+    const agentQuery = agentMode ? "?mode=" + encodeURIComponent(mode || "new") : "";
     const enterProject = (id: string) => {
         router.push(`/canvas/${id}${agentQuery}`);
     };
