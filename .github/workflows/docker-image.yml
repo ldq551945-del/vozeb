@@ -11,7 +11,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/csyqlz/vozeb
+  IMAGE_NAME: ghcr.io/ldq551945-del/vozeb
 
 jobs:
   meta:
