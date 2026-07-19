@@ -9,9 +9,11 @@ import { appStorageKey, legacyAppStorageKey, migrateLocalStorageKey } from "@/li
 
 export type ApiCallFormat = "openai" | "gemini";
 export type SystemChannelProtocol = "auto" | "openai" | "sub2api" | "globalaiopc" | "seedance" | "compatible";
+export type SystemTextProtocol = "auto" | "responses" | "chat-completions";
 
 export type SystemChannelAdvancedConfig = {
     protocol: SystemChannelProtocol;
+    textProtocol: SystemTextProtocol;
     textModel: string;
     imageModel: string;
     videoModel: string;
@@ -25,6 +27,10 @@ export type SystemChannelAdvancedConfig = {
     supportsReferenceImage: boolean;
     supportsReferenceVideo: boolean;
     supportsReferenceAudio: boolean;
+    reasoningEffort: string;
+    contextWindow: number;
+    supportsBackendSearch: boolean;
+    backendSearchEnabled: boolean;
 };
 
 export type ModelChannel = {

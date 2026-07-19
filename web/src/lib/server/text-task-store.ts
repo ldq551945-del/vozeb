@@ -11,6 +11,11 @@ export type TextTaskConfig = {
     apiFormat: "openai" | "gemini";
     model: string;
     systemPrompt?: string;
+    textProtocol?: "auto" | "responses" | "chat-completions";
+    reasoningEffort?: string;
+    contextWindow?: number;
+    supportsBackendSearch?: boolean;
+    backendSearchEnabled?: boolean;
 };
 
 export type TextTask = {

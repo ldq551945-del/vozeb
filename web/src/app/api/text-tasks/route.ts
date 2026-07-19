@@ -15,8 +15,18 @@ configureServerProxyDispatcher();
 const TASK_HEARTBEAT_MS = 30 * 1000;
 const MODEL_REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
 
+type IncomingTextTaskConfig = TextTaskConfig & {
+    advancedConfig?: {
+        textProtocol?: unknown;
+        reasoningEffort?: unknown;
+        contextWindow?: unknown;
+        supportsBackendSearch?: unknown;
+        backendSearchEnabled?: unknown;
+    };
+};
+
 type CreateTextTaskBody = {
-    config?: TextTaskConfig;
+    config?: IncomingTextTaskConfig;
     messages?: AiTextMessage[];
 };
 
@@ -52,7 +62,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as CreateTextTaskBody;
     const config = sanitizeConfig(body.config);
-    const messages = sanitizeMessages(body.messages);
+    const messages = limitMessagesToContext(sanitizeMessages(body.messages), config?.contextWindow);
     if (!config || !messages.length) return NextResponse.json({ error: "任务参数不完整" }, { status: 400 });
 
     const task = createTextTask({ userId: currentUser.id, config, messages });
@@ -87,22 +97,33 @@ async function runTextTask(task: TextTask, origin: string, cookie: string) {
 
 async function runOpenAiTextTask(task: TextTask, origin: string, cookie: string) {
     const config = task.config;
+    if (config.textProtocol === "chat-completions") return runOpenAiChatCompletionTask(task, origin, cookie);
+
     const headers = taskHeaders(config, cookie);
     headers.set("content-type", "application/json");
     const response = await taskFetch(config, taskUrl(config, "/responses", origin), {
         method: "POST",
         headers,
-        body: JSON.stringify({ model: config.model, input: toResponseInput(withSystemMessage(config, task.messages)) }),
+        body: JSON.stringify(buildResponsesRequest(config, withSystemMessage(config, task.messages))),
         cache: "no-store",
     });
     if (!response.ok) {
         const errorMessage = await readFetchError(response, "文本生成失败");
-        if (shouldFallbackToChatCompletions(response.status, errorMessage)) return runOpenAiChatCompletionTask(task, origin, cookie);
+        if (config.textProtocol !== "responses" && shouldFallbackToChatCompletions(response.status, errorMessage)) return runOpenAiChatCompletionTask(task, origin, cookie);
         throw new Error(errorMessage);
     }
     const payload = (await response.json()) as ResponseApiPayload;
     validateResponsePayload(payload);
     return { content: parseOpenAiContent(payload), pointsRemaining: readPointsRemaining(response.headers) };
+}
+
+function buildResponsesRequest(config: TextTaskConfig, messages: AiTextMessage[]) {
+    return {
+        model: config.model,
+        input: toResponseInput(messages),
+        ...(config.reasoningEffort ? { reasoning: { effort: config.reasoningEffort } } : {}),
+        ...(config.backendSearchEnabled ? { tools: [{ type: "web_search" }] } : {}),
+    };
 }
 
 async function runOpenAiChatCompletionTask(task: TextTask, origin: string, cookie: string) {
@@ -145,9 +166,10 @@ function publicTask(task: TextTask) {
     };
 }
 
-function sanitizeConfig(config?: TextTaskConfig): TextTaskConfig | null {
+function sanitizeConfig(config?: IncomingTextTaskConfig): TextTaskConfig | null {
     if (!config?.baseUrl?.trim() || !config?.model?.trim()) return null;
     if (config.apiSource !== "system" || !config.baseUrl.trim().startsWith("/api/ai/system/")) return null;
+    const advanced = config.advancedConfig;
     return {
         apiSource: "system",
         baseUrl: config.baseUrl.trim(),
@@ -155,6 +177,11 @@ function sanitizeConfig(config?: TextTaskConfig): TextTaskConfig | null {
         apiFormat: config.apiFormat === "gemini" ? "gemini" : "openai",
         model: rawModelName(config.model),
         systemPrompt: "",
+        textProtocol: advanced?.textProtocol === "responses" || advanced?.textProtocol === "chat-completions" ? advanced.textProtocol : "auto",
+        reasoningEffort: sanitizeReasoningEffort(advanced?.reasoningEffort),
+        contextWindow: sanitizeContextWindow(advanced?.contextWindow),
+        supportsBackendSearch: Boolean(advanced?.supportsBackendSearch),
+        backendSearchEnabled: Boolean(advanced?.supportsBackendSearch && advanced?.backendSearchEnabled),
     };
 }
 
@@ -173,6 +200,36 @@ function sanitizeMessages(messages?: AiTextMessage[]) {
         }))
         .filter((message) => (Array.isArray(message.content) ? message.content.length > 0 : Boolean(message.content.trim())))
         .slice(0, 20);
+}
+
+function sanitizeReasoningEffort(value: unknown) {
+    const effort = typeof value === "string" ? value.trim().toLowerCase() : "";
+    return /^[a-z][a-z0-9_-]{0,31}$/.test(effort) ? effort : "";
+}
+
+function sanitizeContextWindow(value: unknown) {
+    const contextWindow = Math.floor(Number(value) || 0);
+    return contextWindow > 0 ? Math.min(10_000_000, Math.max(1024, contextWindow)) : 0;
+}
+
+function limitMessagesToContext(messages: AiTextMessage[], contextWindow = 0) {
+    if (!contextWindow) return messages;
+    const maximumCharacters = Math.max(1000, Math.floor(contextWindow * 3.2));
+    let usedCharacters = 0;
+    const selected: AiTextMessage[] = [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        const characters = messageContentCharacters(message.content);
+        if (selected.length && usedCharacters + characters > maximumCharacters) break;
+        selected.unshift(message);
+        usedCharacters += characters;
+    }
+    return selected;
+}
+
+function messageContentCharacters(content: AiTextMessage["content"]) {
+    if (!Array.isArray(content)) return content.length;
+    return content.reduce((total, item) => total + (item.type === "text" ? item.text.length : 1000), 0);
 }
 
 function sanitizeContent(content: AiTextMessage["content"]): AiTextMessage["content"] {

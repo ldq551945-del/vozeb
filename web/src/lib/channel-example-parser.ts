@@ -1,3 +1,5 @@
+import { parse as parseToml } from "smol-toml";
+
 import type { SystemChannelAdvancedConfig, SystemChannelProtocol, SystemModelChannel } from "@/lib/auth/store";
 
 export type ChannelExampleParseResult = {
@@ -70,6 +72,9 @@ export function parseChannelExampleConfig(example: string, channel: SystemModelC
     const raw = example.trim();
     if (!raw) return null;
 
+    const tomlConfig = parseTomlChannelConfig(raw, channel, currentAdvanced);
+    if (tomlConfig) return tomlConfig;
+
     const requestUrl = pickRequestUrl(raw);
     const endpoint = requestUrl ? matchEndpointUrl(requestUrl) : matchEndpointText(raw);
     const jsonBlocks = extractJsonBlocks(raw);
@@ -88,6 +93,8 @@ export function parseChannelExampleConfig(example: string, channel: SystemModelC
 
     const advancedPatch: Partial<SystemChannelAdvancedConfig> = {
         protocol,
+        ...(kind === "text" && endpoint?.marker === "/responses" ? { textProtocol: "responses" as const } : {}),
+        ...(kind === "text" && endpoint?.marker === "/chat/completions" ? { textProtocol: "chat-completions" as const } : {}),
         ...(model && kind === "text" ? { textModel: model } : {}),
         ...(model && (kind === "image" || kind === "image-edit") ? { imageModel: model } : {}),
         ...(model && kind === "video" ? { videoModel: model } : {}),
@@ -122,6 +129,100 @@ export function parseChannelExampleConfig(example: string, channel: SystemModelC
     ].filter(Boolean);
 
     return { patch, summary };
+}
+
+function parseTomlChannelConfig(raw: string, channel: SystemModelChannel, currentAdvanced: SystemChannelAdvancedConfig): ChannelExampleParseResult | null {
+    if (!looksLikeTomlChannelConfig(raw)) return null;
+
+    let document: Record<string, unknown>;
+    try {
+        const parsed = parseToml(raw);
+        if (!isRecord(parsed)) return null;
+        document = parsed;
+    } catch {
+        return null;
+    }
+
+    const providers = recordValue(document.model_providers);
+    const providerId = stringValue(document.model_provider);
+    const provider = recordValue(providers[providerId]);
+    const modelTables = recordValue(document.model);
+    const modelAliases = recordValue(document.models);
+    const defaultAlias = stringValue(modelAliases.default);
+    const selectedModelEntry = recordValue(modelTables[defaultAlias]);
+    const modelEntry = Object.keys(selectedModelEntry).length ? selectedModelEntry : firstRecordValue(modelTables);
+    const source = Object.keys(provider).length ? provider : modelEntry;
+    const model = stringValue(document.model) || stringValue(modelEntry.model);
+    const reviewModel = stringValue(document.review_model);
+    const baseUrl = stringValue(source.base_url);
+    const name = stringValue(source.name) || providerId || defaultAlias;
+    const apiKey = stringValue(source.api_key);
+    const envKey = stringValue(source.env_key);
+    const backend = (stringValue(source.wire_api) || stringValue(source.api_backend)).toLowerCase();
+    const textProtocol = backend === "responses" ? "responses" : "chat-completions";
+    const reasoningEffort = normalizeReasoningEffort(document.model_reasoning_effort || modelEntry.reasoning_effort);
+    const contextWindow = normalizeContextWindow(document.model_context_window || modelEntry.context_window);
+    const supportsBackendSearch = Boolean(modelEntry.supports_backend_search || document.supports_backend_search);
+    const models = uniqueList([...channel.models, model, reviewModel]);
+
+    if (!baseUrl && !model && !providerId && !defaultAlias) return null;
+
+    const nextAdvanced: SystemChannelAdvancedConfig = {
+        ...currentAdvanced,
+        protocol: currentAdvanced.protocol === "auto" ? "openai" : currentAdvanced.protocol,
+        textProtocol,
+        textModel: model || currentAdvanced.textModel,
+        requestTemplate: textProtocol === "responses" ? '{"model":"{{model}}","input":"{{prompt}}"}' : '{"model":"{{model}}","messages":[{"role":"user","content":"{{prompt}}"}]}',
+        resultField: textProtocol === "responses" ? "output_text / output[].content[].text" : "choices[0].message.content",
+        reasoningEffort,
+        contextWindow,
+        supportsBackendSearch,
+        backendSearchEnabled: Boolean(currentAdvanced.backendSearchEnabled && supportsBackendSearch),
+    };
+    const patch: Partial<SystemModelChannel> = {
+        ...(name ? { name } : {}),
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(apiKey ? { apiKey } : {}),
+        ...(models.length ? { models } : {}),
+        advancedConfig: nextAdvanced,
+    };
+    const summary = [
+        name ? `渠道：${name}` : "",
+        baseUrl ? `Base URL：${baseUrl}` : "",
+        model ? `模型：${model}` : "",
+        `文本协议：${textProtocol === "responses" ? "Responses" : "Chat Completions"}`,
+        reasoningEffort ? `推理强度：${reasoningEffort}` : "",
+        contextWindow ? `上下文：${contextWindow}` : "",
+        supportsBackendSearch ? "后端搜索：支持" : "",
+        envKey && !apiKey ? `密钥环境变量：${envKey}（请在管理端填写密钥）` : "",
+    ].filter(Boolean);
+
+    return { patch, summary };
+}
+
+function looksLikeTomlChannelConfig(raw: string) {
+    return /^\s*\[(?:model_providers\.|model(?:\.|\]))/m.test(raw) || (/^\s*model_provider\s*=/m.test(raw) && /^\s*model\s*=/m.test(raw));
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+    return isRecord(value) ? value : {};
+}
+
+function firstRecordValue(value: Record<string, unknown>) {
+    for (const item of Object.values(value)) {
+        if (isRecord(item)) return item;
+    }
+    return {};
+}
+
+function normalizeReasoningEffort(value: unknown) {
+    const effort = stringValue(value).toLowerCase();
+    return /^[a-z][a-z0-9_-]{0,31}$/.test(effort) ? effort : "";
+}
+
+function normalizeContextWindow(value: unknown) {
+    const contextWindow = Math.floor(Number(value) || 0);
+    return contextWindow > 0 ? Math.min(10_000_000, Math.max(1024, contextWindow)) : 0;
 }
 
 function pickRequestUrl(text: string) {

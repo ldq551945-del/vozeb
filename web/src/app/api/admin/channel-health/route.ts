@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { readJsonBody } from "@/lib/auth/request";
 import { getCurrentUser } from "@/lib/auth/session";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
+import type { SystemTextProtocol } from "@/lib/auth/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ type HealthPayload = {
     apiKey?: unknown;
     model?: unknown;
     kind?: unknown;
+    textProtocol?: unknown;
 };
 
 type HealthResult = {
@@ -25,6 +27,7 @@ type HealthResult = {
     model: string;
     status: number;
     protocolKey?: HealthProtocol;
+    textProtocolKey?: SystemTextProtocol;
     protocol?: string;
     referenceHint?: string;
     createPath?: string;
@@ -62,6 +65,7 @@ export async function POST(request: Request) {
     const apiKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
     const model = typeof body.model === "string" ? body.model.trim() : "";
     const kind = body.kind === "image" || body.kind === "video" || body.kind === "text" ? body.kind : "";
+    const textProtocol = body.textProtocol === "responses" || body.textProtocol === "chat-completions" ? body.textProtocol : "auto";
     if (!baseUrl || !apiKey || !model || !kind) return NextResponse.json({ error: "请填写 Base URL、API Key，并选择要测试的模型" }, { status: 400 });
 
     const cooldownKey = `${currentUser.id}:${baseUrl.toLowerCase()}:${kind}`;
@@ -70,7 +74,7 @@ export async function POST(request: Request) {
     healthCooldowns.set(cooldownKey, Date.now() + HEALTH_COOLDOWN_MS);
 
     try {
-        const result = kind === "text" ? await testText(baseUrl, apiKey, model) : kind === "image" ? await testImage(baseUrl, apiKey, model) : await testVideo(baseUrl, apiKey, model);
+        const result = kind === "text" ? await testText(baseUrl, apiKey, model, textProtocol) : kind === "image" ? await testImage(baseUrl, apiKey, model) : await testVideo(baseUrl, apiKey, model);
         return NextResponse.json({ result });
     } catch (error) {
         const message = error instanceof Error ? error.message : "接口测试失败";
@@ -78,7 +82,38 @@ export async function POST(request: Request) {
     }
 }
 
-async function testText(baseUrl: string, apiKey: string, model: string): Promise<HealthResult> {
+async function testText(baseUrl: string, apiKey: string, model: string, textProtocol: SystemTextProtocol): Promise<HealthResult> {
+    if (textProtocol !== "chat-completions") {
+        const responsesResult = await testResponsesText(baseUrl, apiKey, model);
+        if (responsesResult.ok || textProtocol === "responses" || !shouldFallbackTextHealth(responsesResult.status, responsesResult.error || "")) return responsesResult;
+    }
+    return testChatCompletionsText(baseUrl, apiKey, model);
+}
+
+async function testResponsesText(baseUrl: string, apiKey: string, model: string): Promise<HealthResult> {
+    const response = await fetch(apiUrl(baseUrl, "/responses"), {
+        method: "POST",
+        headers: jsonHeaders(apiKey),
+        body: JSON.stringify({ model, input: "Reply exactly OK.", max_output_tokens: 8 }),
+        cache: "no-store",
+    });
+    const payload = await readPayload(response);
+    if (!response.ok) return failed("text", model, response.status, payload);
+    return {
+        ok: true,
+        kind: "text",
+        model,
+        status: response.status,
+        textProtocolKey: "responses",
+        protocol: "Responses 文本兼容",
+        createPath: "/responses",
+        requestTemplate: '{"model":"{{model}}","input":"{{prompt}}"}',
+        resultField: "output_text / output[].content[].text",
+        ...pointsInfo(response.headers),
+    };
+}
+
+async function testChatCompletionsText(baseUrl: string, apiKey: string, model: string): Promise<HealthResult> {
     const response = await fetch(apiUrl(baseUrl, "/chat/completions"), {
         method: "POST",
         headers: jsonHeaders(apiKey),
@@ -93,12 +128,19 @@ async function testText(baseUrl: string, apiKey: string, model: string): Promise
         model,
         status: response.status,
         protocolKey: "openai",
+        textProtocolKey: "chat-completions",
         protocol: "OpenAI 文本兼容",
         createPath: "/chat/completions",
         requestTemplate: '{"model":"{{model}}","messages":[{"role":"user","content":"{{prompt}}"}]}',
         resultField: "choices[0].message.content",
         ...pointsInfo(response.headers),
     };
+}
+
+function shouldFallbackTextHealth(status: number, message: string) {
+    if (status === 404 || status === 405) return true;
+    if (status !== 400) return false;
+    return /responses|endpoint|route|path|not found|not implemented|unknown url|cannot post|invalid url|no such/i.test(message);
 }
 
 async function testImage(baseUrl: string, apiKey: string, model: string): Promise<HealthResult> {

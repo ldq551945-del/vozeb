@@ -50,6 +50,7 @@ import type {
     SiteSocialKey,
     SystemChannelAdvancedConfig,
     SystemChannelProtocol,
+    SystemTextProtocol,
     SystemModelChannel,
     UserRole,
     UserStatus,
@@ -91,6 +92,7 @@ type ChannelHealthResult = {
     model: string;
     status: number;
     protocolKey?: SystemChannelProtocol;
+    textProtocolKey?: SystemTextProtocol;
     protocol?: string;
     referenceHint?: string;
     createPath?: string;
@@ -147,6 +149,11 @@ const channelProtocolOptions: Array<{ value: SystemChannelProtocol; label: strin
     { value: "globalaiopc", label: "GlobalAiOpc" },
     { value: "seedance", label: "Seedance" },
     { value: "compatible", label: "通用兼容" },
+];
+const textProtocolOptions: Array<{ value: SystemTextProtocol; label: string }> = [
+    { value: "auto", label: "自动识别" },
+    { value: "responses", label: "Responses API" },
+    { value: "chat-completions", label: "Chat Completions" },
 ];
 
 const siteSocialItems: Array<{ key: SiteSocialKey; label: string; placeholder: string; icon: ReactNode }> = [
@@ -1177,7 +1184,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         setFetchingModelId(channel.id);
         try {
             const models = await requestAdminModels(channel);
-            updateChannel(channel.id, { models });
+            updateChannel(channel.id, { models: uniqueList([...channel.models, ...models]) });
             message.success(`${channel.name || "渠道"} 已拉取 ${models.length} 个模型`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "拉取模型失败");
@@ -1201,7 +1208,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             const modelMap = new Map(entries);
             setSettings((current) => ({
                 ...current,
-                systemChannels: current.systemChannels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: modelMap.get(channel.id) || [] } : channel)),
+                systemChannels: current.systemChannels.map((channel) => (modelMap.has(channel.id) ? { ...channel, models: uniqueList([...channel.models, ...(modelMap.get(channel.id) || [])]) } : channel)),
             }));
             message.success("模型列表已拉取");
         } catch (error) {
@@ -1228,7 +1235,7 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
             const response = await fetch("/api/admin/channel-health", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, model, kind }),
+                body: JSON.stringify({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, model, kind, textProtocol: channel.advancedConfig?.textProtocol || "auto" }),
             });
             const payload = (await response.json()) as { result?: ChannelHealthResult; error?: string };
             if (!response.ok || !payload.result) throw new Error(payload.error || "接口测试失败");
@@ -1262,12 +1269,10 @@ export function AdminDashboard({ initialUsers, initialSettings, initialPromptCou
         const results: ChannelHealthResult[] = [];
         try {
             let detectedModels = channel.models;
-            if (!detectedModels.length) {
-                try {
-                    detectedModels = await requestAdminModels(channel);
-                } catch {
-                    detectedModels = [];
-                }
+            try {
+                detectedModels = uniqueList([...detectedModels, ...(await requestAdminModels(channel))]);
+            } catch {
+                detectedModels = uniqueList(detectedModels);
             }
             detectedModels = uniqueList([...detectedModels, ...suggestedChannelModels(channel)]);
             const channelForTest = { ...channel, models: detectedModels };
@@ -3638,10 +3643,11 @@ function SystemChannelEditor({
     const applyExampleConfig = () => {
         const parsed = parseChannelExampleConfig(exampleText, channel, advanced);
         if (!parsed) {
-            message.error("请粘贴上游 cURL、请求 JSON 或返回示例");
+            message.error("请粘贴有效的 TOML、cURL、请求 JSON 或返回示例");
             return;
         }
         onChange(parsed.patch);
+        setExampleText("");
         message.success(`已识别并填入：${parsed.summary.slice(0, 4).join("、")}`);
     };
     return (
@@ -3697,28 +3703,39 @@ function SystemChannelEditor({
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                                 <div className="text-sm font-semibold text-stone-800 dark:text-stone-100">上游示例识别</div>
-                                <div className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">粘贴文档里的 cURL、请求 JSON 或返回 JSON，系统会自动填入协议、模型、路径、模板、结果字段和参考素材规则；不会请求上游。</div>
+                                <div className="mt-1 text-xs leading-5 text-stone-500 dark:text-stone-400">粘贴 TOML、cURL、请求 JSON 或返回 JSON，系统会自动填入协议、模型、路径、模板和能力信息；不会请求上游。</div>
                             </div>
                             <Button size="small" icon={<Sparkles className="size-3.5" />} onClick={applyExampleConfig}>
                                 识别示例并填入
                             </Button>
                         </div>
-                        <Input.TextArea
-                            className="mt-3"
-                            value={exampleText}
-                            rows={5}
-                            placeholder='例如：curl https://api.example.com/v1/images/edits ... -d {"model":"gpt-image-2","prompt":"...","image":"https://..."}'
-                            onChange={(event) => setExampleText(event.target.value)}
-                        />
+                        <Input.TextArea className="mt-3" value={exampleText} rows={5} placeholder='例如：[model_providers.proxy]、[model."grok"]，或 curl / JSON 请求示例' onChange={(event) => setExampleText(event.target.value)} />
                     </div>
                     <LabeledControl label="接口协议">
                         <Select className="w-full" value={advanced.protocol} options={channelProtocolOptions} onChange={(protocol: SystemChannelProtocol) => updateAdvanced({ protocol })} />
+                    </LabeledControl>
+                    <LabeledControl label="文本协议">
+                        <Select className="w-full" value={advanced.textProtocol || "auto"} options={textProtocolOptions} onChange={(textProtocol: SystemTextProtocol) => updateAdvanced({ textProtocol })} />
                     </LabeledControl>
                     <LabeledControl label="模型列表">
                         <Select className="w-full" mode="tags" maxTagCount="responsive" value={channel.models} placeholder="检测会自动填，也可以手动输入模型名" onChange={(models) => onChange({ models })} />
                     </LabeledControl>
                     <LabeledControl label="文本模型">
                         <Input value={advanced.textModel} placeholder="检测后自动填" onChange={(event) => updateAdvanced({ textModel: event.target.value })} />
+                    </LabeledControl>
+                    <LabeledControl label="推理强度">
+                        <Input value={advanced.reasoningEffort} placeholder="例如：xhigh；留空不发送" onChange={(event) => updateAdvanced({ reasoningEffort: event.target.value })} />
+                    </LabeledControl>
+                    <LabeledControl label="上下文窗口">
+                        <InputNumber
+                            className="w-full"
+                            min={1024}
+                            max={10000000}
+                            step={1024}
+                            value={advanced.contextWindow || null}
+                            placeholder="例如：1000000"
+                            onChange={(nextValue) => updateAdvanced({ contextWindow: Math.floor(Number(nextValue) || 0) })}
+                        />
                     </LabeledControl>
                     <LabeledControl label="图片模型">
                         <Input value={advanced.imageModel} placeholder="检测后自动填" onChange={(event) => updateAdvanced({ imageModel: event.target.value })} />
@@ -3762,6 +3779,12 @@ function SystemChannelEditor({
                             </Checkbox>
                             <Checkbox checked={advanced.supportsReferenceAudio} onChange={(event) => updateAdvanced({ supportsReferenceAudio: event.target.checked })}>
                                 支持参考音频
+                            </Checkbox>
+                            <Checkbox checked={advanced.supportsBackendSearch} onChange={(event) => updateAdvanced({ supportsBackendSearch: event.target.checked, ...(!event.target.checked ? { backendSearchEnabled: false } : {}) })}>
+                                支持 Responses 后端搜索
+                            </Checkbox>
+                            <Checkbox disabled={!advanced.supportsBackendSearch} checked={advanced.backendSearchEnabled} onChange={(event) => updateAdvanced({ backendSearchEnabled: event.target.checked })}>
+                                默认启用后端搜索
                             </Checkbox>
                         </div>
                     </div>
@@ -4029,6 +4052,7 @@ function createSystemChannel(): SystemModelChannel {
 function createDefaultChannelAdvancedConfig(): SystemChannelAdvancedConfig {
     return {
         protocol: "auto",
+        textProtocol: "auto",
         textModel: "",
         imageModel: "",
         videoModel: "",
@@ -4042,6 +4066,10 @@ function createDefaultChannelAdvancedConfig(): SystemChannelAdvancedConfig {
         supportsReferenceImage: false,
         supportsReferenceVideo: false,
         supportsReferenceAudio: false,
+        reasoningEffort: "",
+        contextWindow: 0,
+        supportsBackendSearch: false,
+        backendSearchEnabled: false,
     };
 }
 
@@ -4058,10 +4086,11 @@ function buildAdvancedConfigFromHealth(channel: SystemModelChannel, results: Cha
     const text = firstOkResult(results, "text");
     const image = firstOkResult(results, "image");
     const video = firstOkResult(results, "video");
-    const protocol = video?.protocolKey || image?.protocolKey || text?.protocolKey || current.protocol || "auto";
+    const protocol = video?.protocolKey || image?.protocolKey || current.protocol || "auto";
     return {
         ...current,
         protocol,
+        textProtocol: text?.textProtocolKey || current.textProtocol || "auto",
         textModel: text?.model || current.textModel,
         imageModel: image?.model || current.imageModel,
         videoModel: video?.model || current.videoModel,

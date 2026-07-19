@@ -14,8 +14,12 @@ type ModelsPayload = {
     apiKey?: unknown;
 };
 
+type ModelEntry = string | { id?: string; name?: string; model?: string };
+
 type ModelsResponse = {
-    data?: Array<{ id?: string }>;
+    data?: ModelEntry[] | { data?: ModelEntry[]; models?: ModelEntry[] };
+    models?: ModelEntry[];
+    result?: { data?: ModelEntry[]; models?: ModelEntry[] };
     error?: { message?: string };
     msg?: string;
 };
@@ -46,15 +50,27 @@ export async function POST(request: Request) {
         });
         const payload = (await response.json().catch(() => ({}))) as ModelsResponse;
         if (!response.ok) return NextResponse.json({ error: payload.msg || payload.error?.message || `拉取模型失败：${response.status}` }, { status: 502 });
-        const models = (payload.data || [])
-            .map((model) => model.id)
-            .filter((id): id is string => Boolean(id))
+        const models = modelEntries(payload)
+            .map((model) => (typeof model === "string" ? model : model.id || model.name || model.model || ""))
+            .map((model) => model.trim())
+            .filter(Boolean)
+            .filter((model, index, items) => items.indexOf(model) === index)
             .sort((a, b) => a.localeCompare(b));
         return NextResponse.json({ models });
     } catch (error) {
         console.error("Admin model fetch failed", error);
         return NextResponse.json({ error: "拉取模型失败，请检查接口地址和网络" }, { status: 502 });
     }
+}
+
+function modelEntries(payload: ModelsResponse) {
+    if (Array.isArray(payload.data)) return payload.data;
+    if (payload.data && Array.isArray(payload.data.data)) return payload.data.data;
+    if (payload.data && Array.isArray(payload.data.models)) return payload.data.models;
+    if (Array.isArray(payload.models)) return payload.models;
+    if (Array.isArray(payload.result?.data)) return payload.result.data;
+    if (Array.isArray(payload.result?.models)) return payload.result.models;
+    return [];
 }
 
 function buildModelsUrl(baseUrl: string) {

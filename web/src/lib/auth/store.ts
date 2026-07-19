@@ -9,9 +9,11 @@ export type UserRole = "admin" | "user";
 export type UserStatus = "active" | "disabled";
 export type ApiCallFormat = "openai" | "gemini";
 export type SystemChannelProtocol = "auto" | "openai" | "sub2api" | "globalaiopc" | "seedance" | "compatible";
+export type SystemTextProtocol = "auto" | "responses" | "chat-completions";
 
 export type SystemChannelAdvancedConfig = {
     protocol: SystemChannelProtocol;
+    textProtocol: SystemTextProtocol;
     textModel: string;
     imageModel: string;
     videoModel: string;
@@ -25,6 +27,10 @@ export type SystemChannelAdvancedConfig = {
     supportsReferenceImage: boolean;
     supportsReferenceVideo: boolean;
     supportsReferenceAudio: boolean;
+    reasoningEffort: string;
+    contextWindow: number;
+    supportsBackendSearch: boolean;
+    backendSearchEnabled: boolean;
 };
 
 type LegacyUserQuota = {
@@ -1366,8 +1372,10 @@ function normalizeSystemChannel(channel: Partial<SystemModelChannel>): SystemMod
 function normalizeSystemChannelAdvancedConfig(config: Partial<SystemChannelAdvancedConfig> | undefined): SystemChannelAdvancedConfig | undefined {
     if (!config || typeof config !== "object") return undefined;
     const protocol = ["auto", "openai", "sub2api", "globalaiopc", "seedance", "compatible"].includes(config.protocol || "") ? config.protocol! : "auto";
+    const textProtocol = ["auto", "responses", "chat-completions"].includes(config.textProtocol || "") ? config.textProtocol! : "auto";
     return {
         protocol,
+        textProtocol,
         textModel: textOrEmpty(config.textModel, 120),
         imageModel: textOrEmpty(config.imageModel, 120),
         videoModel: textOrEmpty(config.videoModel, 120),
@@ -1381,7 +1389,21 @@ function normalizeSystemChannelAdvancedConfig(config: Partial<SystemChannelAdvan
         supportsReferenceImage: Boolean(config.supportsReferenceImage),
         supportsReferenceVideo: Boolean(config.supportsReferenceVideo),
         supportsReferenceAudio: Boolean(config.supportsReferenceAudio),
+        reasoningEffort: normalizeReasoningEffort(config.reasoningEffort),
+        contextWindow: normalizeContextWindow(config.contextWindow),
+        supportsBackendSearch: Boolean(config.supportsBackendSearch),
+        backendSearchEnabled: Boolean(config.supportsBackendSearch && config.backendSearchEnabled),
     };
+}
+
+function normalizeReasoningEffort(value: unknown) {
+    const effort = textOrEmpty(value, 32).toLowerCase();
+    return /^[a-z][a-z0-9_-]*$/.test(effort) ? effort : "";
+}
+
+function normalizeContextWindow(value: unknown) {
+    const contextWindow = Math.floor(Number(value) || 0);
+    return contextWindow > 0 ? Math.min(10_000_000, Math.max(1024, contextWindow)) : 0;
 }
 
 function normalizeApiPath(value: unknown) {
