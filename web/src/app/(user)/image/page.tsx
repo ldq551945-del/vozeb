@@ -917,7 +917,14 @@ export default function ImagePage() {
                     />
                 </div>
             </Drawer>
-            <Drawer title="参数" placement="bottom" size="82vh" open={settingsOpen} onClose={() => setSettingsOpen(false)}>
+            <Drawer
+                title="参数"
+                placement="bottom"
+                size="min(82dvh, 720px)"
+                open={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                styles={{ body: { padding: "16px max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))", overflowX: "hidden", overflowY: "auto" } }}
+            >
                 <div className="grid grid-cols-2 gap-3 pb-4">
                     <GenerationSettings config={effectiveConfig} model={model} updateConfig={updateConfig} openConfigDialog={openConfigDialog} />
                 </div>

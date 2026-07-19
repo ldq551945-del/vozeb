@@ -254,7 +254,7 @@ export function UserStatusActions({ variant = "default", onOpenShortcuts }: User
                 aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
                 title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
             />
-            <SystemStatusPopover className={naturalIconClass} style={iconStyle} />
+            <SystemStatusPopover className={cn(naturalIconClass, variant === "default" && "app-system-status-action")} style={iconStyle} />
             {user ? (
                 <>
                     <Dropdown {...(variant === "canvas" ? { open: accountOpen, onOpenChange: handleAccountOpenChange } : {})} menu={{ items: accountItems, onClick: handleAccountMenuClick }} trigger={["click"]} placement="bottomRight">

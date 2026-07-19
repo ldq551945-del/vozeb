@@ -1362,6 +1362,10 @@
             width: 32px;
         }
 
+        .app-shell-header .app-system-status-action {
+            display: none;
+        }
+
         .landing-site-header .landing-login-button.ant-btn {
             height: 34px;
             max-width: 86px;
