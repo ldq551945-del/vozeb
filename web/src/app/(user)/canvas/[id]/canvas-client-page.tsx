@@ -473,7 +473,7 @@ function VozebCanvasPage() {
                         ...videoMetadata(video),
                         prompt: prompt || node.metadata?.prompt,
                         model: generationConfig.model,
-                        size: generationConfig.size,
+                        size: generationConfig.videoSize,
                         seconds: generationConfig.videoSeconds,
                         vquality: generationConfig.vquality,
                         generateAudio: generationConfig.videoGenerateAudio,
@@ -2450,7 +2450,7 @@ function VozebCanvasPage() {
                 }
 
                 if (mode === "video") {
-                    const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+                    const spec = nodeSizeFromRatio(generationConfig.videoSize, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
                     const isEmptyVideoNode = sourceNode?.type === CanvasNodeType.Video && !sourceNode.metadata?.content;
                     const videoId = isEmptyVideoNode ? nodeId : nanoid();
                     const parent = sourceNode?.position || { x: 0, y: 0 };
@@ -2465,7 +2465,7 @@ function VozebCanvasPage() {
                             prompt: effectivePrompt,
                             status: NODE_STATUS_LOADING,
                             model: generationConfig.model,
-                            size: generationConfig.size,
+                            size: generationConfig.videoSize,
                             seconds: generationConfig.videoSeconds,
                             vquality: generationConfig.vquality,
                             generateAudio: generationConfig.videoGenerateAudio,
@@ -3628,6 +3628,7 @@ function buildGenerationConfig(config: AiConfig, node: CanvasNodeData | undefine
         model,
         quality: node?.metadata?.quality || config.quality || defaultConfig.quality,
         size: node?.metadata?.size || config.size || defaultConfig.size,
+        videoSize: mode === "video" ? node?.metadata?.size || config.videoSize || defaultConfig.videoSize : config.videoSize,
         videoSeconds: node?.metadata?.seconds || config.videoSeconds || defaultConfig.videoSeconds,
         vquality: node?.metadata?.vquality || config.vquality || defaultConfig.vquality,
         videoGenerateAudio: node?.metadata?.generateAudio || config.videoGenerateAudio || defaultConfig.videoGenerateAudio,

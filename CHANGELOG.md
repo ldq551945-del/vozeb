@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- [修复] DQ Grok 视频生成改为服务端后台任务和用户端短轮询，保留管理渠道 URL 与路径规则，避免浏览器同步长请求触发 Cloudflare 524。
+- [调整] 视频比例、清晰度和时长改为独立固定控件，模型选择后仅显示图标与模型标识，并补充 Grok 图生视频能力提示。
+
 - [Adjust] DQ branding, hidden upstream links, and clickable system status popover.
 
 - [新增] 画布新增可收起和调宽的侧栏，支持节点搜索、聚焦、批量导出和素材快速插入。

@@ -53,6 +53,7 @@ export type AiConfig = {
     audioFormat: string;
     audioSpeed: string;
     audioInstructions: string;
+    videoSize: string;
     videoSeconds: string;
     vquality: string;
     videoGenerateAudio: string;
@@ -117,7 +118,7 @@ migrateLocalStorageKey(CONFIG_STORE_KEY, legacyAppStorageKey("ai_config_store"))
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const DEFAULT_SYSTEM_BASE_URL = "";
-const CONFIG_STORE_VERSION = 3;
+const CONFIG_STORE_VERSION = 4;
 
 export const defaultConfig: AiConfig = {
     apiSource: "system",
@@ -135,7 +136,8 @@ export const defaultConfig: AiConfig = {
     audioFormat: "mp3",
     audioSpeed: "1",
     audioInstructions: "",
-    videoSeconds: "5",
+    videoSize: "16:9",
+    videoSeconds: "10",
     vquality: "720",
     videoGenerateAudio: "true",
     videoWatermark: "false",
@@ -324,6 +326,10 @@ export const useConfigStore = create<ConfigStore>()(
                     config.systemPrompt = "";
                     config.audioInstructions = "";
                 }
+                if (version < 4) {
+                    config.videoSize = defaultConfig.videoSize;
+                    config.videoSeconds = defaultConfig.videoSeconds;
+                }
                 return { config };
             },
             merge: (persisted, current) => {
@@ -358,7 +364,8 @@ export const useConfigStore = create<ConfigStore>()(
                         audioFormat: config.audioFormat || defaultConfig.audioFormat,
                         audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
                         audioInstructions: "",
-                        videoSeconds: config.videoSeconds || "5",
+                        videoSize: config.videoSize || defaultConfig.videoSize,
+                        videoSeconds: config.videoSeconds || defaultConfig.videoSeconds,
                         vquality: config.vquality || "720",
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",

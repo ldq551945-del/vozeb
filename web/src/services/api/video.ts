@@ -7,6 +7,7 @@ import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/fil
 import { imageToDataUrl } from "@/services/image-storage";
 import { refreshUserPointsIfSystem, syncUserPointsFromHeaders } from "@/services/api/points";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { videoModelCapabilities } from "@/lib/video-model-capabilities";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -24,7 +25,7 @@ type RequestOptions = { signal?: AbortSignal };
 type ResolvedVideoMediaUrl = { url: string; remoteUrl?: string };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; remoteUrl?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "generation"; model: string; pollPath?: string; resultUrl?: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "generation" | "server"; model: string; pollPath?: string; resultUrl?: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 const GLOBAL_AIOPC_VIDEO_CREATE_PATH = "/videos/videos";
@@ -82,7 +83,7 @@ export async function requestVideoGeneration(config: AiConfig, prompt: string, r
 
 export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationResult> {
     const delayMs = task.provider === "seedance" ? 5000 : 2500;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
@@ -90,7 +91,7 @@ export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGe
             await refreshUserPointsIfSystem(resolveModelRequestConfig(config, task.model).apiSource);
             throw new Error(state.error);
         }
-        if (attempt === 119) {
+        if (attempt === 239) {
             await refreshUserPointsIfSystem(resolveModelRequestConfig(config, task.model).apiSource);
             throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
         }
@@ -105,6 +106,9 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
     const protocol = requestConfig.advancedConfig?.protocol === "sub2api" ? "auto" : requestConfig.advancedConfig?.protocol || "auto";
+    if (requestConfig.apiSource === "system" && videoModelCapabilities(selectedModel)) {
+        return createServerVideoTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
+    }
     if (protocol === "seedance" || (protocol === "auto" && isSeedanceVideoConfig(requestConfig))) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -123,6 +127,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (task.provider === "server") return pollServerVideoTask(task, options);
     if (task.provider === "generation" && task.resultUrl) {
         return { status: "completed", result: await videoResultFromUrl(resolveVideoMediaUrl(requestConfig, task.resultUrl, aiApiUrl(requestConfig, task.pollPath || VIDEO_CREATE_PATHS[0])), options) };
     }
@@ -137,13 +142,54 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
     throw new Error("视频接口没有返回可播放的视频");
 }
 
+async function createServerVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const capabilities = videoModelCapabilities(model);
+    if (capabilities && !references.length) throw new Error("当前模型仅支持图生视频，请添加 1 张参考图作为首帧");
+    if (capabilities?.maxReferenceImages && references.length > capabilities.maxReferenceImages) throw new Error(`当前模型最多支持 ${capabilities.maxReferenceImages} 张参考图`);
+    if (capabilities && (videoReferences.length || audioReferences.length)) throw new Error("当前模型不支持参考视频或参考音频");
+    const serializedReferences = await Promise.all(references.map(async (reference) => ({ name: reference.name, type: reference.type, dataUrl: await imageToDataUrl(reference) })));
+    const response = await axios.post<{ task?: { id?: string } }>(
+        "/api/video-tasks",
+        {
+            config: { baseUrl: config.baseUrl, model: modelOptionName(model), videoSize: config.videoSize, vquality: config.vquality, videoSeconds: config.videoSeconds },
+            prompt,
+            references: serializedReferences,
+            videoReferences,
+            audioReferences,
+        },
+        { signal: options?.signal },
+    );
+    syncUserPointsFromHeaders(response.headers, config.apiSource);
+    const id = response.data.task?.id;
+    if (!id) throw new Error("视频后台任务创建失败");
+    return { id, provider: "server", model };
+}
+
+async function pollServerVideoTask(task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    try {
+        const response = await axios.get<{ task?: { status?: string; resultUrl?: string; remoteUrl?: string; error?: string } }>(`/api/video-tasks/${encodeURIComponent(task.id)}`, {
+            signal: options?.signal,
+            headers: { "cache-control": "no-cache" },
+        });
+        syncUserPointsFromHeaders(response.headers, "system");
+        const state = response.data.task;
+        if (!state) return { status: "failed", error: "视频后台任务不存在" };
+        if (state.status === "success" && state.resultUrl) return { status: "completed", result: await videoResultFromUrl({ url: state.resultUrl, remoteUrl: state.remoteUrl }, options) };
+        if (state.status === "error" || state.status === "cancelled") return { status: "failed", error: videoStageError(state.error || "视频生成失败") };
+        return { status: "pending" };
+    } catch (error) {
+        if (options?.signal?.aborted) await axios.delete(`/api/video-tasks/${encodeURIComponent(task.id)}`).catch(() => undefined);
+        throw error;
+    }
+}
+
 async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
     try {
         const body = new FormData();
         body.append("model", modelOptionName(model));
         body.append("prompt", prompt);
         body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
-        if (normalizeVideoSize(config.size)) body.append("size", normalizeVideoSize(config.size)!);
+        if (normalizeVideoSize(config.videoSize)) body.append("size", normalizeVideoSize(config.videoSize)!);
         body.append("resolution_name", normalizeVideoResolution(config.vquality));
         body.append("preset", "normal");
         const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
@@ -304,7 +350,7 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     const payload = {
         model: modelOptionName(model),
         content,
-        ratio: normalizeSeedanceRatio(config.size),
+        ratio: normalizeSeedanceRatio(config.videoSize),
         resolution: normalizeSeedanceResolution(config.vquality, modelOptionName(model)),
         duration: normalizeSeedanceDuration(config.videoSeconds),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
@@ -393,10 +439,10 @@ async function buildCompatibleVideoPayloadVariants(config: AiConfig, model: stri
         throw new Error("GlobalAiOpc 视频接口的参考音频需要公网音频 URL，当前本地参考音频无法直接提交给上游");
     }
     const duration = path === GLOBAL_AIOPC_VIDEO_CREATE_PATH ? normalizeGlobalAiOpcVideoDuration(config.videoSeconds) : normalizeCompatibleVideoDuration(config.videoSeconds);
-    const ratio = normalizeCompatibleVideoRatio(config.size);
+    const ratio = normalizeCompatibleVideoRatio(config.videoSize);
     const quality = normalizeCompatibleVideoQuality(config.vquality);
-    const size = normalizeVideoSize(config.size) || "1280x720";
-    const dimensions = normalizeCompatibleVideoDimensions(config.size);
+    const size = normalizeVideoSize(config.videoSize) || "1280x720";
+    const dimensions = normalizeCompatibleVideoDimensions(config.videoSize);
     const mediaPayloads = path === GLOBAL_AIOPC_VIDEO_CREATE_PATH ? buildGlobalAiOpcVideoMediaPayloads(images) : qingyanVideoConfig ? buildQingyanVideoMediaPayloads(images) : buildCompatibleVideoMediaPayloads(images);
     const templatePayloads = buildAdvancedVideoTemplatePayloads(config, model, prompt, {
         duration,

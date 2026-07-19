@@ -1141,7 +1141,7 @@ function configNodeOp(id: string, input: Record<string, unknown>, x: number, y: 
             prompt,
             status: "idle",
             model: resolveGenerationModel(config, mode, stringOptional(input.model)),
-            size: stringOptional(input.size) || config.size,
+            size: stringOptional(input.size) || config.videoSize,
             quality: stringOptional(input.quality) || config.quality,
             count: numberOptional(input.count) ?? generationCount(mode === "image" ? config.canvasImageCount || config.count : config.count),
             seconds: stringOptional(input.seconds) || config.videoSeconds,

@@ -19,12 +19,13 @@ import { droppedFiles, leftDropTarget, preventFileDragEvent } from "@/lib/file-d
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { APP_STORAGE_NAME, LEGACY_APP_STORAGE_NAME } from "@/lib/storage-keys";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { videoModelCapabilities } from "@/lib/video-model-capabilities";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { deleteGenerationLogs as deleteServerGenerationLogs, listGenerationLogs, recordGenerationLog, type StoredGenerationLogRecord } from "@/services/api/generation-logs";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, type VideoGenerationTask } from "@/services/api/video";
 import { useAssetStore } from "@/stores/use-asset-store";
-import { modelOptionLabel, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, useConfigStore, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { cn } from "@/lib/utils";
@@ -83,7 +84,7 @@ type GenerationLog = {
     resultDeleted?: boolean;
 };
 
-type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">;
+type GenerationLogConfig = Pick<AiConfig, "model" | "videoModel" | "size" | "videoSize" | "vquality" | "videoSeconds" | "videoGenerateAudio" | "videoWatermark">;
 
 type UpdateAiConfig = <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
 type ReferenceDropTarget = "image" | "video" | "audio";
@@ -132,6 +133,8 @@ export default function VideoPage() {
     const userIdRef = useRef("");
 
     const model = effectiveConfig.videoModel || effectiveConfig.model;
+    const modelCapabilities = videoModelCapabilities(model);
+    const referenceImageLimit = modelCapabilities?.maxReferenceImages || SEEDANCE_REFERENCE_LIMITS.images;
     const pointsCost = requestCreditCost({
         apiSource: effectiveConfig.apiSource,
         modelPointCosts: effectiveConfig.modelPointCosts,
@@ -180,9 +183,10 @@ export default function VideoPage() {
         const selectedFiles = Array.from(files || []);
         const unsupported = selectedFiles.filter((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && !isSupportedAudioFile(file));
         if (unsupported.length) message.warning("已忽略不支持的参考素材，请使用图片、mp4/mov 视频或 mp3/wav 音频");
-        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= SEEDANCE_REFERENCE_LIMITS.imageMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length);
-        const videoFiles = selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= SEEDANCE_REFERENCE_LIMITS.videoMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.videos - videoReferences.length);
-        const audioFiles = selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= SEEDANCE_REFERENCE_LIMITS.audioMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.audios - audioReferences.length);
+        if (modelCapabilities && selectedFiles.some((file) => file.type.startsWith("video/") || isSupportedAudioFile(file))) message.warning("当前模型不支持参考视频或参考音频，已忽略这些文件");
+        const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/") && file.size <= SEEDANCE_REFERENCE_LIMITS.imageMaxBytes).slice(0, referenceImageLimit - references.length);
+        const videoFiles = modelCapabilities ? [] : selectedFiles.filter((file) => file.type.startsWith("video/") && file.size <= SEEDANCE_REFERENCE_LIMITS.videoMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.videos - videoReferences.length);
+        const audioFiles = modelCapabilities ? [] : selectedFiles.filter((file) => isSupportedAudioFile(file) && file.size <= SEEDANCE_REFERENCE_LIMITS.audioMaxBytes).slice(0, SEEDANCE_REFERENCE_LIMITS.audios - audioReferences.length);
         if (selectedFiles.some((file) => file.type.startsWith("image/") && file.size > SEEDANCE_REFERENCE_LIMITS.imageMaxBytes)) message.warning("已忽略超过 30MB 的参考图");
         if (selectedFiles.some((file) => file.type.startsWith("video/") && file.size > SEEDANCE_REFERENCE_LIMITS.videoMaxBytes)) message.warning("已忽略超过 50MB 的参考视频");
         if (selectedFiles.some((file) => isSupportedAudioFile(file) && file.size > SEEDANCE_REFERENCE_LIMITS.audioMaxBytes)) message.warning("已忽略超过 15MB 的参考音频");
@@ -208,7 +212,7 @@ export default function VideoPage() {
             ),
             message.warning,
         );
-        setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+        setReferences((value) => [...value, ...nextReferences].slice(0, referenceImageLimit));
         setVideoReferences((value) => [...value, ...nextVideoReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
         setAudioReferences((value) => [...value, ...nextAudioReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.audios));
     };
@@ -252,12 +256,12 @@ export default function VideoPage() {
                 return;
             }
             const nextReferences = await Promise.all(
-                blobs.slice(0, SEEDANCE_REFERENCE_LIMITS.images - references.length).map(async (blob, index) => {
+                blobs.slice(0, referenceImageLimit - references.length).map(async (blob, index) => {
                     const image = await uploadImage(blob);
                     return { id: nanoid(), name: `clipboard-${index + 1}.png`, type: image.mimeType, dataUrl: image.url, storageKey: image.storageKey };
                 }),
             );
-            setReferences((value) => [...value, ...nextReferences].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, ...nextReferences].slice(0, referenceImageLimit));
             message.success(`已读取 ${nextReferences.length} 张参考图`);
         } catch {
             message.error("剪切板里没有可读取的图片");
@@ -364,6 +368,19 @@ export default function VideoPage() {
             openConfigDialog(true);
             return null;
         }
+        const capabilities = videoModelCapabilities(model);
+        if (capabilities && !references.length) {
+            message.error("当前模型仅支持图生视频，请添加 1 张参考图作为首帧");
+            return null;
+        }
+        if (capabilities?.maxReferenceImages && references.length > capabilities.maxReferenceImages) {
+            message.error("当前模型最多支持 " + capabilities.maxReferenceImages + " 张参考图");
+            return null;
+        }
+        if (capabilities && (videoReferences.length || audioReferences.length)) {
+            message.error("当前模型不支持参考视频或参考音频");
+            return null;
+        }
         const videoReferenceError = seedanceVideoReferenceError(videoReferences);
         if (videoReferenceError) {
             message.error(`${videoReferenceError}。${seedanceVideoReferenceHint}`);
@@ -390,7 +407,7 @@ export default function VideoPage() {
             createdAt: retryStartedAt,
             time: new Date(retryStartedAt).toLocaleString("zh-CN", { hour12: false }),
             config: normalizeLogConfig({ ...currentLog, config: retryConfig }),
-            size: retryConfig.size,
+            size: retryConfig.videoSize,
             resolution: normalizeResolution(retryConfig.vquality),
             seconds: retryConfig.videoSeconds,
             status: "生成中",
@@ -450,7 +467,7 @@ export default function VideoPage() {
             setPrompt(payload.content);
         } else if (payload.kind === "image") {
             const stored = await uploadImage(payload.dataUrl);
-            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, SEEDANCE_REFERENCE_LIMITS.images));
+            setReferences((value) => [...value, { id: nanoid(), name: payload.title, type: stored.mimeType, dataUrl: stored.url, storageKey: stored.storageKey }].slice(0, referenceImageLimit));
         } else if (payload.kind === "video") {
             setVideoReferences((value) => [...value, { id: nanoid(), name: payload.title, type: "video/mp4", url: payload.url, storageKey: payload.storageKey, width: payload.width, height: payload.height }].slice(0, SEEDANCE_REFERENCE_LIMITS.videos));
         }
@@ -616,7 +633,7 @@ export default function VideoPage() {
         setVideoReferences(log.videoReferences || []);
         setAudioReferences(log.audioReferences || []);
         if (log.config.videoModel || log.model) updateConfig("videoModel", log.config.videoModel || log.model);
-        if (log.config.size) updateConfig("size", log.config.size);
+        if (log.config.videoSize || log.config.size) updateConfig("videoSize", log.config.videoSize || log.config.size);
         if (log.config.vquality) updateConfig("vquality", log.config.vquality);
         if (log.config.videoSeconds) updateConfig("videoSeconds", log.config.videoSeconds);
         if (log.config.videoGenerateAudio) updateConfig("videoGenerateAudio", log.config.videoGenerateAudio);
@@ -751,7 +768,7 @@ export default function VideoPage() {
                                             </button>
                                         </div>
                                     ))}
-                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 9 张</div> : null}
+                                    {!references.length ? <div className="flex min-w-full items-center justify-center text-sm text-stone-500">暂无参考图，最多 {referenceImageLimit} 张</div> : null}
                                 </div>
                             </div>
 
@@ -815,7 +832,7 @@ export default function VideoPage() {
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {modelOptionLabel(effectiveConfig, model)} · {normalizeResolution(effectiveConfig.vquality)}p · {videoSizeLabel(effectiveConfig.size)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}s
+                                    {modelOptionName(model)} · {normalizeResolution(effectiveConfig.vquality)}P · {videoSizeLabel(effectiveConfig.videoSize)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}S
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -941,19 +958,23 @@ export default function VideoPage() {
 
 function GenerationSettings({ config, model, updateConfig, openConfigDialog }: { config: AiConfig; model: string; updateConfig: UpdateAiConfig; openConfigDialog: (shouldPromptContinue?: boolean) => void }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const capabilities = videoModelCapabilities(model);
 
     return (
         <>
             <label className="col-span-2 block min-w-0 sm:col-span-1">
                 <span className="mb-1.5 block text-sm font-semibold sm:mb-2 sm:text-base">模型</span>
                 <ModelPicker config={config} value={model} onChange={(value) => updateConfig("videoModel", value)} capability="video" fullWidth onMissingConfig={() => openConfigDialog(true)} />
+                {capabilities?.hint ? <span className="mt-2 block text-xs leading-5 text-stone-500 dark:text-stone-400">{capabilities.hint}</span> : null}
             </label>
             <div className="col-span-2">
                 <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
             </div>
-            <div className="col-span-2">
-                <AudioSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle className="space-y-4" />
-            </div>
+            {!capabilities ? (
+                <div className="col-span-2">
+                    <AudioSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle className="space-y-4" />
+                </div>
+            ) : null}
         </>
     );
 }
@@ -1286,7 +1307,7 @@ async function serverVideoLogToWorkbenchLog(record: StoredGenerationLogRecord): 
         prompt: record.prompt,
         time: new Date(createdAt).toLocaleString("zh-CN", { hour12: false }),
         model: record.model,
-        config: { model: record.model, videoModel: record.model, size: "", vquality: "", videoSeconds: "", videoGenerateAudio: "true", videoWatermark: "false" },
+        config: { model: record.model, videoModel: record.model, size: "", videoSize: "", vquality: "", videoSeconds: "", videoGenerateAudio: "true", videoWatermark: "false" },
         references: [],
         videoReferences: [],
         audioReferences: [],
@@ -1382,7 +1403,7 @@ async function normalizeLog(log: Partial<GenerationLog>): Promise<GenerationLog>
         videoReferences,
         audioReferences,
         durationMs: log.durationMs || 0,
-        size: log.size || config.size || "",
+        size: log.size || config.videoSize || config.size || "",
         resolution: normalizeResolution(log.resolution || config.vquality || ""),
         seconds: log.seconds || config.videoSeconds || "",
         status: log.status || "成功",
@@ -1497,6 +1518,7 @@ function normalizeLogConfig(log: Partial<GenerationLog>): GenerationLogConfig {
         model: log.config?.model || log.model || "",
         videoModel: log.config?.videoModel || log.model || "",
         size: log.config?.size || log.size || "",
+        videoSize: log.config?.videoSize || log.config?.size || log.size || "",
         vquality: normalizeResolution(log.config?.vquality || log.resolution || ""),
         videoSeconds: log.config?.videoSeconds || log.seconds || "",
         videoGenerateAudio: log.config?.videoGenerateAudio || "true",
@@ -1595,7 +1617,8 @@ function buildLog({
     const logConfig = {
         model: config.model,
         videoModel: config.videoModel,
-        size: config.size,
+        size: config.videoSize,
+        videoSize: config.videoSize,
         vquality: normalizeResolution(config.vquality),
         videoSeconds: config.videoSeconds,
         videoGenerateAudio: config.videoGenerateAudio,
@@ -1614,7 +1637,7 @@ function buildLog({
         videoReferences,
         audioReferences,
         durationMs,
-        size: logConfig.size,
+        size: logConfig.videoSize,
         resolution: logConfig.vquality,
         seconds: logConfig.videoSeconds,
         status,
@@ -1635,7 +1658,7 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
         ...config,
         model,
         videoModel: model,
-        size: seedance ? normalizeSeedanceRatio(config.size) : normalizeVideoSize(config.size),
+        videoSize: seedance ? normalizeSeedanceRatio(config.videoSize) : normalizeVideoSize(config.videoSize),
         videoSeconds: normalizeVideoSeconds(config.videoSeconds),
         vquality: normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
@@ -1644,9 +1667,8 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
 }
 
 function normalizeVideoSeconds(value: string) {
-    if (String(value).trim() === "-1") return "-1";
-    const seconds = Math.floor(Number(value) || 5);
-    return String(Math.max(1, Math.min(20, seconds)));
+    const seconds = Math.floor(Number(value) || 10);
+    return String(Math.max(1, Math.min(15, seconds)));
 }
 
 function normalizeVideoSize(value: string) {

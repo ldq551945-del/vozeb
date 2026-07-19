@@ -186,6 +186,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         model,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         size: node.metadata?.size || globalConfig.size || defaultConfig.size,
+        videoSize: mode === "video" ? node.metadata?.size || globalConfig.videoSize || defaultConfig.videoSize : globalConfig.videoSize,
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         videoGenerateAudio: node.metadata?.generateAudio || globalConfig.videoGenerateAudio || defaultConfig.videoGenerateAudio,
@@ -204,6 +205,7 @@ function modelMatchesCanvasGenerationMode(model: string, mode: CanvasGenerationM
 }
 
 function videoConfigPatch(key: keyof AiConfig, value: string) {
+    if (key === "videoSize") return { size: value };
     if (key === "videoSeconds") return { seconds: value };
     if (key === "videoGenerateAudio") return { generateAudio: value };
     if (key === "videoWatermark") return { watermark: value };
