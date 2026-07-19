@@ -5,6 +5,7 @@ import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceVideoConfig } from "@/lib/seedance-video";
+import { videoModelCapabilities } from "@/lib/video-model-capabilities";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { type AiConfig } from "@/stores/use-config-store";
 
@@ -29,6 +30,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const ratio = normalizeVideoSizeValue(config.videoSize);
     const seconds = Math.max(1, Math.min(15, Math.floor(Number(config.videoSeconds) || 10)));
     const seedance = isSeedanceVideoConfig(config);
+    const capabilities = videoModelCapabilities(config.model || config.videoModel);
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -37,7 +39,13 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 <SettingGroup title="清晰度" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
                         {resolutionOptions.map((item) => (
-                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                            <OptionPill
+                                key={item.value}
+                                selected={resolution === item.value}
+                                disabled={Boolean(capabilities?.supportedQualities && !capabilities.supportedQualities.includes(item.value))}
+                                theme={theme}
+                                onClick={() => onConfigChange("vquality", item.value)}
+                            >
                                 {item.label}
                             </OptionPill>
                         ))}
@@ -49,7 +57,8 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             <button
                                 key={value}
                                 type="button"
-                                className="flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border bg-transparent text-sm transition hover:opacity-80"
+                                disabled={Boolean(capabilities?.supportedRatios && !capabilities.supportedRatios.includes(value))}
+                                className="flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border bg-transparent text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-35"
                                 style={{ borderColor: ratio === value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
                                 onMouseDown={(event) => event.stopPropagation()}
                                 onClick={() => onConfigChange("videoSize", value)}

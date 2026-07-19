@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { toSafeGenerationErrorMessage } from "@/lib/server/generation-errors";
 import { configureServerProxyDispatcher } from "@/lib/server/proxy-dispatcher";
 import { countActiveVideoTasks, createVideoTask, refundVideoTaskPoints, updateVideoTask, type VideoTask, type VideoTaskReference } from "@/lib/server/video-task-store";
-import { videoModelCapabilities } from "@/lib/video-model-capabilities";
+import { resolveGrokVideoPixelSize, videoCapabilityError, videoModelCapabilities } from "@/lib/video-model-capabilities";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,6 +46,8 @@ export async function POST(request: Request) {
     if (!/multipart\/form-data/i.test(template)) return NextResponse.json({ error: "当前视频渠道未配置 multipart 请求模板" }, { status: 400 });
 
     const capabilities = videoModelCapabilities(input.model);
+    const capabilityError = videoCapabilityError(input.model, input.videoSize, input.vquality);
+    if (capabilityError) return NextResponse.json({ error: capabilityError }, { status: 400 });
     if (capabilities && !input.references.length) return NextResponse.json({ error: "当前模型仅支持图生视频，请添加 1 张参考图作为首帧" }, { status: 400 });
     if (capabilities?.maxReferenceImages && input.references.length > capabilities.maxReferenceImages) return NextResponse.json({ error: `当前模型最多支持 ${capabilities.maxReferenceImages} 张参考图` }, { status: 400 });
     if (capabilities && (input.videoReferenceCount || input.audioReferenceCount)) return NextResponse.json({ error: "当前模型不支持参考视频或参考音频" }, { status: 400 });
@@ -189,7 +191,7 @@ function buildMultipartBody(task: VideoTask) {
     form.set("prompt", task.prompt);
     form.set("seconds", task.videoSeconds);
     form.set("aspect_ratio", task.videoSize);
-    form.set("size", `${task.vquality}P`);
+    form.set("size", resolveGrokVideoPixelSize(task.videoSize, task.vquality));
     for (const reference of task.references) form.append("input_reference[]", dataUrlToBlob(reference.dataUrl), reference.name || "reference.png");
     return form;
 }
@@ -257,7 +259,18 @@ function readPath(value: Record<string, unknown>, path: string) {
 }
 
 function readPayloadError(payload: Record<string, unknown>) {
-    return findString(payload, ["error.message", "message", "msg", "detail"]);
+    let message = findString(payload, ["error.message", "message", "msg", "detail"]);
+    for (let depth = 0; depth < 3 && message.startsWith("{"); depth += 1) {
+        try {
+            const nested = JSON.parse(message) as Record<string, unknown>;
+            const next = findString(nested, ["error.message", "message", "msg", "detail"]);
+            if (!next || next === message) break;
+            message = next;
+        } catch {
+            break;
+        }
+    }
+    return message;
 }
 
 function videoPointMultiplier(multipliers: { videoQuality?: Record<string, number>; videoSeconds?: Record<string, number> } | undefined, quality: string, seconds: string) {

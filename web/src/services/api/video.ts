@@ -7,7 +7,7 @@ import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/fil
 import { imageToDataUrl } from "@/services/image-storage";
 import { refreshUserPointsIfSystem, syncUserPointsFromHeaders } from "@/services/api/points";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { videoModelCapabilities } from "@/lib/video-model-capabilities";
+import { videoCapabilityError, videoModelCapabilities } from "@/lib/video-model-capabilities";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -144,6 +144,8 @@ export async function storeGeneratedVideo(result: VideoGenerationResult): Promis
 
 async function createServerVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], videoReferences: ReferenceVideo[], audioReferences: ReferenceAudio[], options?: RequestOptions): Promise<VideoGenerationTask> {
     const capabilities = videoModelCapabilities(model);
+    const capabilityError = videoCapabilityError(model, config.videoSize, String(config.vquality).replace(/p$/i, ""));
+    if (capabilityError) throw new Error(capabilityError);
     if (capabilities && !references.length) throw new Error("当前模型仅支持图生视频，请添加 1 张参考图作为首帧");
     if (capabilities?.maxReferenceImages && references.length > capabilities.maxReferenceImages) throw new Error(`当前模型最多支持 ${capabilities.maxReferenceImages} 张参考图`);
     if (capabilities && (videoReferences.length || audioReferences.length)) throw new Error("当前模型不支持参考视频或参考音频");

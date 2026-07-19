@@ -968,7 +968,7 @@ function GenerationSettings({ config, model, updateConfig, openConfigDialog }: {
                 {capabilities?.hint ? <span className="mt-2 block text-xs leading-5 text-stone-500 dark:text-stone-400">{capabilities.hint}</span> : null}
             </label>
             <div className="col-span-2">
-                <VideoSettingsPanel config={config} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
+                <VideoSettingsPanel config={{ ...config, model }} onConfigChange={(key, value) => updateConfig(key, value)} theme={theme} showTitle={false} className="space-y-4" />
             </div>
             {!capabilities ? (
                 <div className="col-span-2">
