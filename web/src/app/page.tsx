@@ -3,8 +3,8 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Gauge, Image as ImageIcon, Layers3, Mail, MessageCircle, Send, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
-import { Button, Image, Modal, Tag } from "antd";
+import { ArrowRight, Image as ImageIcon, Layers3, Mail, MessageCircle, Send, ShieldCheck, Wand2 } from "lucide-react";
+import { Button, Image, Modal } from "antd";
 
 import { AuthForm } from "@/components/auth/auth-form";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -42,14 +42,8 @@ type SiteShowcaseItem = { id: string; title: string; coverUrl: string; prompt: s
 
 const featureItems = [
     { icon: Layers3, title: "无限画布", text: "把图片、文字、视频、音频与配置节点串成连续创作流。" },
-    { icon: Wand2, title: "AI 工作台", text: "统一管理文生图、图生图、视频生成、提示词和素材沉淀。" },
-    { icon: ImageIcon, title: "提示词资产", text: "内置公共提示词库与远程封面，灵感、参数和结果一起归档。" },
-];
-
-const heroStats = [
-    { icon: ImageIcon, value: "874+", label: "远程封面提示词" },
-    { icon: Gauge, value: "响应", label: "急速响应" },
-    { icon: ShieldCheck, value: "安全", label: "数据保护" },
+    { icon: Wand2, title: "多模态生成", text: "在同一套清晰参数中完成文生图、图生图、文字与视频生成。" },
+    { icon: ImageIcon, title: "灵感资产", text: "把提示词、参考风格、参数和结果一起沉淀，随时继续下一次创作。" },
 ];
 
 const defaultSite: {
@@ -72,9 +66,7 @@ const defaultSite: {
     privacyUrl: "/privacy",
     homeShowcaseMode: "random",
     homeShowcaseItems: [],
-    friendLinks: [
-        { id: "xianyu", label: "咸鱼", url: "https://www.goofish.com/", enabled: true },
-    ],
+    friendLinks: [{ id: "xianyu", label: "咸鱼", url: "https://www.goofish.com/", enabled: true }],
     socials: {
         email: { enabled: true, label: "邮箱联系", url: "mailto:dq-contact@qq.com" },
         telegram: { enabled: false, label: "Telegram", url: "" },
@@ -92,54 +84,6 @@ const socialIconByKey: Record<SiteSocialKey, ReactNode> = {
 
 const publicPrefetchRoutes = ["/login", "/register", "/forgot-password", "/privacy", "/terms"];
 const authenticatedPrefetchRoutes = navigationTools.map((tool) => `/${tool.slug}`);
-
-function Highlighter({ action, color, children }: { action: "highlight" | "underline"; color: string; children: ReactNode }) {
-    if (action === "highlight") {
-        return (
-            <span className="box-decoration-clone rounded-sm px-1 font-medium text-stone-800 dark:text-stone-200" style={{ backgroundColor: `${color}70` }}>
-                {children}
-            </span>
-        );
-    }
-
-    return (
-        <span className="box-decoration-clone border-b-[3px] px-1 font-medium text-stone-800 dark:text-stone-200" style={{ borderColor: color }}>
-            {children}
-        </span>
-    );
-}
-
-function HeroCape() {
-    return (
-        <svg className="hero-cape" viewBox="0 0 760 160" role="presentation" aria-hidden="true">
-            <defs>
-                <clipPath id="cape-reveal">
-                    <rect className="hero-cape-reveal" x="0" y="0" width="760" height="160" />
-                </clipPath>
-                <linearGradient id="cape-fill" x1="110" x2="660" y1="18" y2="104" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stopColor="#67e8f9" stopOpacity="0" />
-                    <stop offset="0.22" stopColor="#67e8f9" stopOpacity="0.18" />
-                    <stop offset="0.52" stopColor="#f8fafc" stopOpacity="0.42" />
-                    <stop offset="0.78" stopColor="#38bdf8" stopOpacity="0.22" />
-                    <stop offset="1" stopColor="#0ea5e9" stopOpacity="0" />
-                </linearGradient>
-                <linearGradient id="cape-edge" x1="118" x2="684" y1="84" y2="20" gradientUnits="userSpaceOnUse">
-                    <stop offset="0" stopColor="#22d3ee" stopOpacity="0" />
-                    <stop offset="0.26" stopColor="#a5f3fc" stopOpacity="0.72" />
-                    <stop offset="0.55" stopColor="#ffffff" stopOpacity="0.9" />
-                    <stop offset="0.82" stopColor="#67e8f9" stopOpacity="0.72" />
-                    <stop offset="1" stopColor="#38bdf8" stopOpacity="0" />
-                </linearGradient>
-            </defs>
-            <g clipPath="url(#cape-reveal)">
-                <path className="hero-cape-fill" d="M82 76 C188 132 326 125 438 78 C538 36 619 5 724 18 C628 48 552 98 448 132 C312 176 172 150 82 76Z" fill="url(#cape-fill)" />
-                <path className="hero-cape-edge hero-cape-edge-main" d="M78 72 C178 126 323 121 438 74 C540 34 620 6 724 16" />
-                <path className="hero-cape-edge hero-cape-edge-soft" d="M120 105 C235 140 356 130 470 91 C555 62 620 46 695 48" />
-                <path className="hero-cape-tail" d="M584 42 C642 72 694 88 740 84" />
-            </g>
-        </svg>
-    );
-}
 
 export default function HomePage() {
     const router = useRouter();
@@ -265,32 +209,32 @@ export default function HomePage() {
     }, [site.homeShowcaseItems, site.homeShowcaseMode]);
 
     return (
-        <main className="animated-dot-bg relative h-dvh overflow-x-hidden overflow-y-auto bg-background text-stone-950 dark:text-stone-100">
-            <header className="landing-site-header relative z-10">
-                <div className="mx-auto grid h-20 max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6">
-                    <Link href="/" className="inline-flex min-w-0 items-center gap-3 text-stone-950 dark:text-white">
-                        <SiteLogo logoUrl={site.logoUrl} className="size-9 bg-stone-950 dark:bg-white" />
-                        <span className="truncate text-xl font-semibold tracking-normal">{site.title || "DQ"}</span>
+        <main className="landing-editorial-bg relative h-dvh overflow-x-hidden overflow-y-auto">
+            <header className="landing-editorial-header sticky top-0 z-50">
+                <div className="mx-auto grid h-[72px] max-w-[1500px] grid-cols-[1fr_auto_1fr] items-center gap-5 px-6 lg:px-10">
+                    <Link href="/" aria-label="返回 DQ 首页" className="landing-editorial-brand inline-flex min-w-0 items-center gap-3">
+                        <SiteLogo logoUrl={site.logoUrl} className="size-8" />
+                        <span className="truncate text-lg font-medium tracking-[-0.02em]">{site.title || "DQ"}</span>
                     </Link>
-                    <nav className="landing-nav-pill hidden items-center gap-1 text-sm font-medium text-stone-700 md:flex dark:text-stone-300">
+                    <nav className="landing-editorial-nav hidden items-center gap-7 md:flex" aria-label="首页导航">
                         {navigationTools.slice(0, 1).map((tool) => (
-                            <Link key={tool.slug} href={`/${tool.slug}`} prefetch className="rounded-md px-4 py-2 transition hover:bg-stone-950/6 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white">
+                            <Link key={tool.slug} href={"/" + tool.slug} prefetch className="landing-editorial-nav-link">
                                 {tool.label}
                             </Link>
                         ))}
                         {showAdminEntry ? (
-                            <Link href="/admin" prefetch className="inline-flex items-center gap-1.5 rounded-md px-4 py-2 transition hover:bg-stone-950/6 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white">
-                                <ShieldCheck className="size-4" />
+                            <Link href="/admin" prefetch className="landing-editorial-nav-link inline-flex items-center gap-1.5">
+                                <ShieldCheck className="size-3.5" aria-hidden="true" />
                                 管理入口
                             </Link>
                         ) : null}
                         {navigationTools.slice(1, 4).map((tool) => (
-                            <Link key={tool.slug} href={`/${tool.slug}`} prefetch className="rounded-md px-4 py-2 transition hover:bg-stone-950/6 hover:text-stone-950 dark:hover:bg-white/10 dark:hover:text-white">
+                            <Link key={tool.slug} href={"/" + tool.slug} prefetch className="landing-editorial-nav-link">
                                 {tool.label}
                             </Link>
                         ))}
                     </nav>
-                    <div className="landing-header-actions flex items-center justify-end gap-2">
+                    <div className="landing-editorial-header-actions flex items-center justify-end gap-2">
                         <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className="landing-theme-toggle" aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
                         <Button className="landing-login-button" onClick={() => openProtectedEntry("/canvas")}>
                             {hasVerifiedUser ? "进入工作台" : "登录"}
@@ -299,145 +243,121 @@ export default function HomePage() {
                 </div>
             </header>
 
-            <section className="landing-hero-section relative mx-auto flex min-h-[calc(100dvh-7rem)] max-w-[1500px] items-center justify-center px-6 pb-8 pt-4">
-                <div className="landing-hero-copy relative z-10 mx-auto w-full max-w-7xl text-center">
-                    <div className="hero-title-stage">
-                        <div className="hero-title-wrap">
-                            <h1 className="ai-title-aurora max-w-6xl text-balance text-7xl font-semibold tracking-normal sm:text-8xl lg:text-[9rem] xl:text-[11rem]">{site.title || "DQ"}</h1>
-                            <span className="hero-version-badge inline-flex items-center gap-2 rounded-lg border border-cyan-300/45 bg-white/82 px-3.5 py-2 text-sm font-semibold text-stone-700 shadow-sm shadow-cyan-950/5 dark:border-cyan-200/20 dark:bg-cyan-200/8 dark:text-cyan-100">
-                                <Sparkles className="size-4" />
-                                {APP_VERSION} 创作入口
-                            </span>
-                            <HeroCape />
-                        </div>
+            <section className="landing-editorial-hero mx-auto max-w-[1500px] px-6 lg:px-10">
+                <div className="landing-editorial-kicker">
+                    <span>AI CREATIVE WORKSPACE</span>
+                    <span>DQ / {APP_VERSION}</span>
+                </div>
+
+                <div className="landing-editorial-title-stage" aria-label={site.title || "DQ"}>
+                    <h1>{site.title || "DQ"}</h1>
+                </div>
+
+                <div className="landing-editorial-hero-summary">
+                    <div className="landing-editorial-hero-copy">
+                        <span className="landing-editorial-eyebrow">CREATE / CONNECT / REFINE</span>
+                        <h2>让灵感、模型与结果，在一个创作空间里持续生长。</h2>
+                        <p>生成图片、文字与视频，连接素材和配置，把一次尝试沉淀为可以继续推演的工作流。</p>
                     </div>
-                    <p className="mx-auto mt-5 max-w-4xl text-balance text-lg leading-8 text-stone-500 sm:text-xl sm:leading-9 dark:text-stone-300">
-                        在{" "}
-                        <Highlighter action="underline" color="#FF9800">
-                            {site.title || "DQ"}
-                        </Highlighter>{" "}
-                        中生成、连接和重组{" "}
-                        <Highlighter action="highlight" color="#87CEFA">
-                            图片、文字与图形
-                        </Highlighter>
-                        ，让创作从单次生成变成连续推演。
-                    </p>
-                    <div className="landing-hero-actions mt-8 flex flex-wrap items-center justify-center gap-4">
-                        <Button className="landing-hero-cta" type="primary" size="large" onClick={() => openProtectedEntry(`/${primaryTool.slug}`)} icon={<ArrowRight className="size-5" />} iconPlacement="end">
-                            开始使用
+                    <div className="landing-editorial-hero-actions">
+                        <Button className="landing-hero-cta" type="primary" size="large" onClick={() => openProtectedEntry("/" + primaryTool.slug)} icon={<ArrowRight className="size-4" aria-hidden="true" />} iconPlacement="end">
+                            开始创作
                         </Button>
-                        <Button className="landing-hero-cta landing-hero-cta-secondary" size="large" href="/prompts">
-                            查看提示词库
-                        </Button>
-                    </div>
-                    <div className="landing-capability-stage mx-auto mt-10 max-w-6xl">
-                        <div className="landing-stat-grid grid gap-3 sm:grid-cols-3">
-                            {heroStats.map((item) => {
-                                const Icon = item.icon;
-                                return (
-                                    <div key={item.label} className="landing-stat-pill text-left">
-                                        <span className="landing-stat-icon">
-                                            <Icon className="size-4" />
-                                        </span>
-                                        <div>
-                                            <div className="text-sm font-semibold text-stone-950 dark:text-white">{item.value}</div>
-                                            <div className="text-xs text-stone-500 dark:text-stone-400">{item.label}</div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <div className="landing-feature-grid mt-4 grid gap-4 sm:grid-cols-3">
-                            {featureItems.map((item) => {
-                                const Icon = item.icon;
-                                return (
-                                    <article key={item.title} className="landing-feature-panel text-left">
-                                        <span className="landing-feature-icon">
-                                            <Icon className="size-5" />
-                                        </span>
-                                        <h2 className="mt-3 text-base font-semibold text-stone-950 dark:text-white">{item.title}</h2>
-                                        <p className="mt-2 text-sm leading-6 text-stone-500 dark:text-stone-400">{item.text}</p>
-                                    </article>
-                                );
-                            })}
-                        </div>
+                        <Link href="/prompts" className="landing-editorial-text-link">
+                            浏览提示词库
+                            <ArrowRight className="size-4" aria-hidden="true" />
+                        </Link>
                     </div>
                 </div>
-            </section>
 
-            <section ref={showcaseRef} className="landing-showcase-section relative z-10 mx-auto max-w-[1200px] px-6 pb-20">
-                <div className="landing-showcase-shell">
-                    <div className="landing-showcase-header mb-8 flex flex-wrap items-end justify-between gap-4">
-                        <div>
-                            <h2 className="text-2xl font-semibold text-stone-950 sm:text-3xl dark:text-white">沉淀每一次好结果</h2>
-                            <p className="mt-3 max-w-2xl text-base leading-7 text-stone-600 dark:text-stone-400">收藏稳定出图的提示词、参考风格和结果图片，让下一次创作从已有经验开始。</p>
-                        </div>
-                        <Button type="link" href="/prompts" icon={<ArrowRight className="size-4" />} iconPlacement="end">
-                            查看提示词库
-                        </Button>
-                    </div>
-                    <div className="grid auto-rows-[190px] gap-4 sm:grid-cols-2 md:grid-cols-4">
-                        {promptShowcase.map((item, index) => (
-                            <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => {
-                                    if (!item.coverUrl) return;
-                                    setPreviewIndex(
-                                        Math.max(
-                                            0,
-                                            previewItems.findIndex((preview) => preview.id === item.id),
-                                        ),
-                                    );
-                                    setPreviewOpen(true);
-                                }}
-                                className={cn(
-                                    "group relative cursor-pointer overflow-hidden rounded-lg border border-white/60 bg-white/70 text-left shadow-sm shadow-stone-200/60 dark:border-white/10 dark:bg-white/5 dark:shadow-black/20",
-                                    index === 0 && "md:col-span-2 md:row-span-2",
-                                    index === 3 && "md:col-span-2",
-                                )}
-                            >
-                                {item.coverUrl ? (
-                                    <img src={item.coverUrl} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" loading="lazy" referrerPolicy="no-referrer" />
-                                ) : (
-                                    <div className="h-full w-full bg-[linear-gradient(135deg,#f8fafc,#dff5ff_45%,#111827)] transition duration-500 group-hover:scale-[1.03] dark:bg-[linear-gradient(135deg,#0f172a,#164e63_45%,#020617)]" />
-                                )}
-                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent p-4 text-white">
-                                    <div className="mb-2 flex flex-wrap gap-1.5">
-                                        {item.tags.slice(0, 2).map((tag) => (
-                                            <Tag key={tag} variant="filled" className="m-0 bg-white/15 text-[11px] text-white backdrop-blur">
-                                                {tag}
-                                            </Tag>
-                                        ))}
-                                    </div>
-                                    <h3 className="text-sm font-medium">{item.title}</h3>
-                                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/75">{item.prompt}</p>
+                <div className="landing-editorial-capabilities">
+                    {featureItems.map((item, index) => {
+                        const Icon = item.icon;
+                        return (
+                            <article key={item.title} className="landing-editorial-capability">
+                                <div className="landing-editorial-capability-meta">
+                                    <span>0{index + 1}</span>
+                                    <Icon className="size-[18px]" aria-hidden="true" />
                                 </div>
-                            </button>
-                        ))}
-                        {!promptShowcase.length
-                            ? Array.from({ length: 4 }).map((_, index) => (
-                                  <div
-                                      key={index}
-                                      className={cn(
-                                          "rounded-lg border border-white/60 bg-white/50 shadow-sm shadow-stone-200/40 dark:border-white/10 dark:bg-white/5 dark:shadow-black/20",
-                                          index === 0 && "md:col-span-2 md:row-span-2",
-                                          index === 3 && "md:col-span-2",
-                                      )}
-                                  />
-                              ))
-                            : null}
-                    </div>
+                                <h3>{item.title}</h3>
+                                <p>{item.text}</p>
+                            </article>
+                        );
+                    })}
                 </div>
             </section>
 
-            <footer className="landing-footer relative z-10 mx-auto max-w-[1200px] px-6 pb-10">
+            <section ref={showcaseRef} className="landing-editorial-showcase mx-auto max-w-[1500px] px-6 lg:px-10">
+                <div className="landing-editorial-section-header">
+                    <div>
+                        <span className="landing-editorial-eyebrow">SELECTED PROMPTS</span>
+                        <h2>沉淀每一次好结果</h2>
+                    </div>
+                    <div className="landing-editorial-section-intro">
+                        <p>收藏稳定有效的提示词、参考风格与结果图片，让下一次创作从已有经验开始。</p>
+                        <Link href="/prompts" className="landing-editorial-text-link">
+                            查看全部
+                            <ArrowRight className="size-4" aria-hidden="true" />
+                        </Link>
+                    </div>
+                </div>
+
+                <div className="landing-editorial-work-grid">
+                    {promptShowcase.map((item, index) => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            aria-label={item.coverUrl ? "预览 " + item.title : item.title}
+                            disabled={!item.coverUrl}
+                            onClick={() => {
+                                if (!item.coverUrl) return;
+                                setPreviewIndex(
+                                    Math.max(
+                                        0,
+                                        previewItems.findIndex((preview) => preview.id === item.id),
+                                    ),
+                                );
+                                setPreviewOpen(true);
+                            }}
+                            className={cn("landing-editorial-work-card", index === 0 && "is-featured", index === 3 && "is-wide")}
+                        >
+                            <div className="landing-editorial-work-media">{item.coverUrl ? <img src={item.coverUrl} alt={item.title} loading="lazy" referrerPolicy="no-referrer" /> : <div className="landing-editorial-work-placeholder" />}</div>
+                            <div className="landing-editorial-work-copy">
+                                <div className="landing-editorial-work-meta">
+                                    <span>{item.category || "PROMPT"}</span>
+                                    <span>{item.tags[0] || "DQ"}</span>
+                                </div>
+                                <h3>{item.title}</h3>
+                                <p>{item.prompt}</p>
+                            </div>
+                        </button>
+                    ))}
+                    {!promptShowcase.length
+                        ? Array.from({ length: 4 }).map((_, index) => (
+                              <div key={index} aria-hidden="true" className={cn("landing-editorial-work-card is-loading", index === 0 && "is-featured", index === 3 && "is-wide")}>
+                                  <div className="landing-editorial-work-media" />
+                                  <div className="landing-editorial-work-copy">
+                                      <span />
+                                      <span />
+                                  </div>
+                              </div>
+                          ))
+                        : null}
+                </div>
+            </section>
+
+            <section className="landing-editorial-statement mx-auto max-w-[1500px] px-6 lg:px-10">
+                <div className="landing-editorial-statement-label">ONE WORKSPACE</div>
+                <p>不是堆叠更多工具，而是让创作过程更清楚、更连续，也更容易被再次使用。</p>
+            </section>
+
+            <footer className="landing-editorial-footer mx-auto max-w-[1500px] px-6 pb-10 lg:px-10">
                 <div className="landing-footer-shell">
                     <div className="landing-footer-brand min-w-0">
-                        <SiteLogo logoUrl={site.logoUrl} className="landing-footer-logo bg-stone-950 dark:bg-white" />
+                        <SiteLogo logoUrl={site.logoUrl} className="landing-footer-logo" />
                         <div className="landing-footer-brand-copy min-w-0">
-                            <div className="landing-footer-title truncate text-base font-semibold text-stone-950 dark:text-white">{site.title || "DQ"}</div>
-                            <div className="landing-footer-copyright mt-1 text-sm text-stone-500 dark:text-stone-400">{site.footerCopyright}</div>
+                            <div className="landing-footer-title truncate">{site.title || "DQ"}</div>
+                            <div className="landing-footer-copyright">{site.footerCopyright}</div>
                         </div>
                     </div>
                     <div className="landing-footer-actions">
@@ -456,7 +376,7 @@ export default function HomePage() {
                             {friendLinks.length ? (
                                 <div className="landing-footer-link-row landing-footer-friend-links">
                                     {friendLinks.map((link) => (
-                                        <Link key={link.id} href={link.url} className="landing-footer-link" target={link.url.startsWith("/") ? undefined : "_blank"} rel={link.url.startsWith("/") ? undefined : "noreferrer"}>
+                                        <Link key={link.id} href={link.url} className="landing-footer-link" target={opensInNewTab(link.url) ? "_blank" : undefined} rel={opensInNewTab(link.url) ? "noreferrer" : undefined}>
                                             {link.label}
                                         </Link>
                                     ))}
@@ -467,7 +387,7 @@ export default function HomePage() {
                             {Object.entries(site.socials)
                                 .filter(([, social]) => social.enabled && social.url)
                                 .map(([key, social]) => (
-                                    <Link key={key} href={social.url} className="landing-footer-social" title={social.label} target={social.url.startsWith("/") ? undefined : "_blank"} rel={social.url.startsWith("/") ? undefined : "noreferrer"}>
+                                    <Link key={key} href={social.url} className="landing-footer-social" title={social.label} target={opensInNewTab(social.url) ? "_blank" : undefined} rel={opensInNewTab(social.url) ? "noreferrer" : undefined}>
                                         {socialIconByKey[key as SiteSocialKey]}
                                         <span className={key === "wechat" ? "text-xs font-medium" : "sr-only"}>{social.label}</span>
                                     </Link>
@@ -500,14 +420,14 @@ export default function HomePage() {
                             <span className="text-2xl font-semibold">{site.title || "DQ"}</span>
                         </div>
                         <div className="landing-auth-modal-copy">
-                            <p className="text-sm font-medium text-cyan-700 dark:text-cyan-200">DQ Access</p>
+                            <p className="text-sm font-medium text-stone-500 dark:text-stone-400">DQ Access</p>
                             <h2 className="mt-3 text-3xl font-semibold leading-tight text-stone-950 dark:text-white">继续你的创作现场</h2>
                             <p className="mt-4 text-sm leading-7 text-stone-500 dark:text-stone-300">登录后进入画布、素材、模型和提示词库。</p>
                         </div>
                         <div className="landing-auth-modal-bullets grid gap-2 text-sm text-stone-600 dark:text-stone-300">
                             {["无限画布编排", "远程提示词库", "用户积分与后台"].map((item) => (
                                 <div key={item} className="flex items-center gap-2">
-                                    <span className="size-1.5 rounded-full bg-cyan-300" />
+                                    <span className="size-1.5 rounded-full bg-stone-400 dark:bg-stone-500" />
                                     <span>{item}</span>
                                 </div>
                             ))}
@@ -585,6 +505,10 @@ function shouldSkipHomepagePrefetch() {
     const connection = nav.connection;
     if (connection?.saveData) return true;
     return /(^|-)2g$/i.test(connection?.effectiveType || "");
+}
+
+function opensInNewTab(url: string) {
+    return /^https?:\/\//i.test(url);
 }
 
 function SiteLogo({ logoUrl, className }: { logoUrl: string; className: string }) {
