@@ -10,10 +10,12 @@ export type UserStatus = "active" | "disabled";
 export type ApiCallFormat = "openai" | "gemini";
 export type SystemChannelProtocol = "auto" | "openai" | "sub2api" | "globalaiopc" | "seedance" | "compatible";
 export type SystemTextProtocol = "auto" | "responses" | "chat-completions";
+export type SystemVideoAdapter = "none" | "wavespeed-seedance2";
 
 export type SystemChannelAdvancedConfig = {
     protocol: SystemChannelProtocol;
     textProtocol: SystemTextProtocol;
+    videoAdapter: SystemVideoAdapter;
     textModel: string;
     imageModel: string;
     videoModel: string;
@@ -1373,9 +1375,11 @@ function normalizeSystemChannelAdvancedConfig(config: Partial<SystemChannelAdvan
     if (!config || typeof config !== "object") return undefined;
     const protocol = ["auto", "openai", "sub2api", "globalaiopc", "seedance", "compatible"].includes(config.protocol || "") ? config.protocol! : "auto";
     const textProtocol = ["auto", "responses", "chat-completions"].includes(config.textProtocol || "") ? config.textProtocol! : "auto";
+    const videoAdapter = config.videoAdapter === "wavespeed-seedance2" ? config.videoAdapter : "none";
     return {
         protocol,
         textProtocol,
+        videoAdapter,
         textModel: textOrEmpty(config.textModel, 120),
         imageModel: textOrEmpty(config.imageModel, 120),
         videoModel: textOrEmpty(config.videoModel, 120),

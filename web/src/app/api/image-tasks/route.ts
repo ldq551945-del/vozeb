@@ -627,10 +627,12 @@ function sanitizeConfig(config?: ImageTaskConfig): ImageTaskConfig | null {
     };
 }
 
-function sanitizeAdvancedConfig(config?: ImageTaskConfig["advancedConfig"]) {
+function sanitizeAdvancedConfig(config?: ImageTaskConfig["advancedConfig"]): ImageTaskConfig["advancedConfig"] {
     if (!config || typeof config !== "object") return undefined;
     return {
         protocol: config.protocol || "auto",
+        textProtocol: config.textProtocol === "responses" || config.textProtocol === "chat-completions" ? config.textProtocol : "auto",
+        videoAdapter: config.videoAdapter === "wavespeed-seedance2" ? config.videoAdapter : "none",
         textModel: textOrEmpty(config.textModel),
         imageModel: textOrEmpty(config.imageModel),
         videoModel: textOrEmpty(config.videoModel),
@@ -644,6 +646,10 @@ function sanitizeAdvancedConfig(config?: ImageTaskConfig["advancedConfig"]) {
         supportsReferenceImage: Boolean(config.supportsReferenceImage),
         supportsReferenceVideo: Boolean(config.supportsReferenceVideo),
         supportsReferenceAudio: Boolean(config.supportsReferenceAudio),
+        reasoningEffort: "",
+        contextWindow: 0,
+        supportsBackendSearch: false,
+        backendSearchEnabled: false,
     };
 }
 

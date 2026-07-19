@@ -6,6 +6,7 @@ import { Switch } from "antd";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceVideoConfig } from "@/lib/seedance-video";
 import { videoModelCapabilities } from "@/lib/video-model-capabilities";
+import { isWaveSpeedSeedance2Adapter, normalizeWaveSpeedSeedance2Resolution } from "@/lib/video-channel-adapters";
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { type AiConfig } from "@/stores/use-config-store";
 
@@ -26,11 +27,13 @@ type VideoSettingsPanelProps = {
 };
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
-    const resolution = normalizeVideoResolutionValue(config.vquality);
+    const model = config.model || config.videoModel;
+    const wavespeedSeedance2 = isWaveSpeedSeedance2Adapter(config, model);
+    const resolution = wavespeedSeedance2 ? normalizeWaveSpeedSeedance2Resolution(config.vquality).replace(/p$/, "") : normalizeVideoResolutionValue(config.vquality);
     const ratio = normalizeVideoSizeValue(config.videoSize);
     const seconds = Math.max(1, Math.min(15, Math.floor(Number(config.videoSeconds) || 10)));
     const seedance = isSeedanceVideoConfig(config);
-    const capabilities = videoModelCapabilities(config.model || config.videoModel);
+    const capabilities = videoModelCapabilities(model);
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -42,7 +45,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             <OptionPill
                                 key={item.value}
                                 selected={resolution === item.value}
-                                disabled={Boolean(capabilities?.supportedQualities && !capabilities.supportedQualities.includes(item.value))}
+                                disabled={Boolean((wavespeedSeedance2 && item.value === "480") || (capabilities?.supportedQualities && !capabilities.supportedQualities.includes(item.value)))}
                                 theme={theme}
                                 onClick={() => onConfigChange("vquality", item.value)}
                             >
@@ -50,6 +53,11 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                             </OptionPill>
                         ))}
                     </div>
+                    {wavespeedSeedance2 ? (
+                        <div className="text-xs" style={{ color: theme.node.muted }}>
+                            WaveSpeed Seedance 2.0 · 支持 720P / 1080P
+                        </div>
+                    ) : null}
                 </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">

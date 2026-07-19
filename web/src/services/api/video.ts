@@ -8,6 +8,7 @@ import { imageToDataUrl } from "@/services/image-storage";
 import { refreshUserPointsIfSystem, syncUserPointsFromHeaders } from "@/services/api/points";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { videoCapabilityError, videoModelCapabilities } from "@/lib/video-model-capabilities";
+import { isWaveSpeedSeedance2Adapter, normalizeChannelVideoResolution, waveSpeedSeedance2ErrorMessage } from "@/lib/video-channel-adapters";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -192,7 +193,9 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         body.append("prompt", prompt);
         body.append("seconds", normalizeVideoSeconds(config.videoSeconds));
         if (normalizeVideoSize(config.videoSize)) body.append("size", normalizeVideoSize(config.videoSize)!);
-        body.append("resolution_name", normalizeVideoResolution(config.vquality));
+        const resolution = normalizeChannelVideoResolution(config, model, config.vquality, normalizeVideoResolution);
+        body.append("resolution_name", resolution);
+        if (isWaveSpeedSeedance2Adapter(config, model)) body.append("resolution", resolution);
         body.append("preset", "normal");
         const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
         files.forEach((file) => {
@@ -211,7 +214,7 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         await refreshUserPointsIfSystem(config.apiSource);
         return { id: created.id, provider: "openai", model };
     } catch (error) {
-        const errorMessage = readAxiosError(error, "视频任务创建失败");
+        const errorMessage = waveSpeedSeedance2ErrorMessage(config, model, readAxiosError(error, "视频任务创建失败"));
         if (config.advancedConfig?.protocol !== "openai" && shouldFallbackToCompatibleVideo(error, errorMessage)) return createCompatibleVideoTask(config, model, prompt, references, options);
         await refreshUserPointsIfSystem(config.apiSource);
         throw new Error(videoCreationError(errorMessage));
@@ -266,7 +269,7 @@ async function createCompatibleVideoTask(
                 await refreshUserPointsIfSystem(config.apiSource);
                 return { id, provider: "generation", model, pollPath: path };
             } catch (error) {
-                const message = readAxiosError(error, "视频任务创建失败");
+                const message = waveSpeedSeedance2ErrorMessage(config, model, readAxiosError(error, "视频任务创建失败"));
                 lastError = message;
                 if (shouldFallbackToCompatibleVideo(error, message)) break;
                 if (shouldRetryCompatibleVideoPayload(error, message)) continue;
@@ -442,14 +445,15 @@ async function buildCompatibleVideoPayloadVariants(config: AiConfig, model: stri
     }
     const duration = path === GLOBAL_AIOPC_VIDEO_CREATE_PATH ? normalizeGlobalAiOpcVideoDuration(config.videoSeconds) : normalizeCompatibleVideoDuration(config.videoSeconds);
     const ratio = normalizeCompatibleVideoRatio(config.videoSize);
-    const quality = normalizeCompatibleVideoQuality(config.vquality);
+    const resolution = normalizeChannelVideoResolution(config, model, config.vquality, normalizeVideoResolution);
+    const quality = normalizeCompatibleVideoQuality(resolution);
     const size = normalizeVideoSize(config.videoSize) || "1280x720";
     const dimensions = normalizeCompatibleVideoDimensions(config.videoSize);
     const mediaPayloads = path === GLOBAL_AIOPC_VIDEO_CREATE_PATH ? buildGlobalAiOpcVideoMediaPayloads(images) : qingyanVideoConfig ? buildQingyanVideoMediaPayloads(images) : buildCompatibleVideoMediaPayloads(images);
     const templatePayloads = buildAdvancedVideoTemplatePayloads(config, model, prompt, {
         duration,
         ratio,
-        resolution: normalizeVideoResolution(config.vquality),
+        resolution,
         quality,
         size,
         width: dimensions.width,
@@ -464,7 +468,7 @@ async function buildCompatibleVideoPayloadVariants(config: AiConfig, model: stri
             prompt,
             duration,
             ratio,
-            resolution: normalizeVideoResolution(config.vquality),
+            resolution,
             autoFace: false,
             ...(referenceVideos.length ? { referenceVideos } : {}),
             ...(referenceAudios.length ? { referenceAudios } : {}),
@@ -482,7 +486,7 @@ async function buildCompatibleVideoPayloadVariants(config: AiConfig, model: stri
         response_format: "url",
         ratio,
         aspect_ratio: ratio,
-        resolution: normalizeVideoResolution(config.vquality),
+        resolution,
         quality,
         async: true,
         generate_audio: boolConfig(config.videoGenerateAudio, true),
@@ -1115,9 +1119,10 @@ function unwrapEnvelope<T>(payload: ApiEnvelope<T>, emptyMessage: string): T {
 
 function readAxiosError(error: unknown, fallback: string) {
     if (axios.isCancel(error)) return "请求已取消";
-    if (axios.isAxiosError<{ error?: { message?: string }; message?: string; msg?: string; code?: number }>(error)) {
+    if (axios.isAxiosError<{ error?: string | { message?: string }; message?: string; msg?: string; code?: number }>(error)) {
         const responseData = error.response?.data;
-        return responseData?.msg || responseData?.message || responseData?.error?.message || statusMessage(error.response?.status, fallback);
+        const responseError = typeof responseData?.error === "string" ? responseData.error : responseData?.error?.message;
+        return responseData?.msg || responseData?.message || responseError || statusMessage(error.response?.status, fallback);
     }
     if (error instanceof DOMException && error.name === "AbortError") return "请求已取消";
     return error instanceof Error ? error.message : fallback;

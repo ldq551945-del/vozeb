@@ -51,11 +51,13 @@ import type {
     SystemChannelAdvancedConfig,
     SystemChannelProtocol,
     SystemTextProtocol,
+    SystemVideoAdapter,
     SystemModelChannel,
     UserRole,
     UserStatus,
 } from "@/lib/auth/store";
 import type { GenerationAssetStats, StoredGenerationLog } from "@/lib/server/generation-log-store";
+import { videoAdapterLabel } from "@/lib/video-channel-adapters";
 import type { Prompt } from "@/services/api/prompts";
 
 type AdminDashboardProps = {
@@ -154,6 +156,10 @@ const textProtocolOptions: Array<{ value: SystemTextProtocol; label: string }> =
     { value: "auto", label: "自动识别" },
     { value: "responses", label: "Responses API" },
     { value: "chat-completions", label: "Chat Completions" },
+];
+const videoAdapterOptions: Array<{ value: SystemVideoAdapter; label: string }> = [
+    { value: "none", label: "不使用专用适配" },
+    { value: "wavespeed-seedance2", label: "WaveSpeed Seedance 2.0" },
 ];
 
 const siteSocialItems: Array<{ key: SiteSocialKey; label: string; placeholder: string; icon: ReactNode }> = [
@@ -3663,6 +3669,11 @@ function SystemChannelEditor({
                             {channel.enabled ? "启用" : "停用"}
                         </Tag>
                         <Tag className="m-0">{channel.models.length} 个模型</Tag>
+                        {videoAdapterLabel(channel.advancedConfig?.videoAdapter) ? (
+                            <Tag color="cyan" className="m-0">
+                                {videoAdapterLabel(channel.advancedConfig?.videoAdapter)}
+                            </Tag>
+                        ) : null}
                     </div>
                     <div className="mt-1 truncate text-xs text-stone-500 dark:text-stone-400">{channel.baseUrl || "未填写 Base URL"}</div>
                     <div className="mt-1 text-xs text-stone-400 dark:text-stone-500">新手只需要填写名称、Base URL 和 API Key，再点一键检测接口。</div>
@@ -3716,6 +3727,9 @@ function SystemChannelEditor({
                     </LabeledControl>
                     <LabeledControl label="文本协议">
                         <Select className="w-full" value={advanced.textProtocol || "auto"} options={textProtocolOptions} onChange={(textProtocol: SystemTextProtocol) => updateAdvanced({ textProtocol })} />
+                    </LabeledControl>
+                    <LabeledControl label="视频适配">
+                        <Select className="w-full" value={advanced.videoAdapter || "none"} options={videoAdapterOptions} onChange={(videoAdapter: SystemVideoAdapter) => updateAdvanced({ videoAdapter })} />
                     </LabeledControl>
                     <LabeledControl label="模型列表">
                         <Select className="w-full" mode="tags" maxTagCount="responsive" value={channel.models} placeholder="检测会自动填，也可以手动输入模型名" onChange={(models) => onChange({ models })} />
@@ -4053,6 +4067,7 @@ function createDefaultChannelAdvancedConfig(): SystemChannelAdvancedConfig {
     return {
         protocol: "auto",
         textProtocol: "auto",
+        videoAdapter: "none",
         textModel: "",
         imageModel: "",
         videoModel: "",

@@ -10,10 +10,12 @@ import { appStorageKey, legacyAppStorageKey, migrateLocalStorageKey } from "@/li
 export type ApiCallFormat = "openai" | "gemini";
 export type SystemChannelProtocol = "auto" | "openai" | "sub2api" | "globalaiopc" | "seedance" | "compatible";
 export type SystemTextProtocol = "auto" | "responses" | "chat-completions";
+export type SystemVideoAdapter = "none" | "wavespeed-seedance2";
 
 export type SystemChannelAdvancedConfig = {
     protocol: SystemChannelProtocol;
     textProtocol: SystemTextProtocol;
+    videoAdapter: SystemVideoAdapter;
     textModel: string;
     imageModel: string;
     videoModel: string;

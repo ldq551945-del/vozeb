@@ -20,6 +20,7 @@ import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { APP_STORAGE_NAME, LEGACY_APP_STORAGE_NAME } from "@/lib/storage-keys";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio, seedanceReferenceLabel, seedanceVideoReferenceError, seedanceVideoReferenceHint, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
 import { videoModelCapabilities } from "@/lib/video-model-capabilities";
+import { isWaveSpeedSeedance2Adapter, normalizeWaveSpeedSeedance2Resolution } from "@/lib/video-channel-adapters";
 import { deleteStoredMedia, resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { deleteGenerationLogs as deleteServerGenerationLogs, listGenerationLogs, recordGenerationLog, type StoredGenerationLogRecord } from "@/services/api/generation-logs";
@@ -832,7 +833,7 @@ export default function VideoPage() {
 
                             <div className="flex items-center justify-between rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-800 dark:bg-stone-900 sm:hidden">
                                 <span className="truncate text-stone-500 dark:text-stone-400">
-                                    {modelOptionName(model)} · {normalizeResolution(effectiveConfig.vquality)}P · {videoSizeLabel(effectiveConfig.videoSize)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}S
+                                    {modelOptionName(model)} · {displayVideoResolution(effectiveConfig, model)}P · {videoSizeLabel(effectiveConfig.videoSize)} · {normalizeVideoSeconds(effectiveConfig.videoSeconds)}S
                                 </span>
                                 <Button size="small" type="text" icon={<SlidersHorizontal className="size-4" />} onClick={() => setSettingsOpen(true)}>
                                     调整
@@ -1619,7 +1620,7 @@ function buildLog({
         videoModel: config.videoModel,
         size: config.videoSize,
         videoSize: config.videoSize,
-        vquality: normalizeResolution(config.vquality),
+        vquality: displayVideoResolution(config, model),
         videoSeconds: config.videoSeconds,
         videoGenerateAudio: config.videoGenerateAudio,
         videoWatermark: config.videoWatermark,
@@ -1660,7 +1661,7 @@ function buildVideoConfig(config: AiConfig, model: string): AiConfig {
         videoModel: model,
         videoSize: seedance ? normalizeSeedanceRatio(config.videoSize) : normalizeVideoSize(config.videoSize),
         videoSeconds: normalizeVideoSeconds(config.videoSeconds),
-        vquality: normalizeResolution(config.vquality),
+        vquality: displayVideoResolution(config, model),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),
         videoWatermark: String(boolConfig(config.videoWatermark, false)),
     };
@@ -1677,6 +1678,10 @@ function normalizeVideoSize(value: string) {
 
 function normalizeResolution(value: string) {
     return normalizeVideoResolutionValue(value);
+}
+
+function displayVideoResolution(config: AiConfig, model: string) {
+    return isWaveSpeedSeedance2Adapter(config, model) ? normalizeWaveSpeedSeedance2Resolution(config.vquality).replace(/p$/, "") : normalizeResolution(config.vquality);
 }
 
 function delay(ms: number) {
