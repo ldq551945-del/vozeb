@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
@@ -247,6 +247,54 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
     );
 }
 
+function useCanvasVisualViewport() {
+    const [style, setStyle] = useState<CSSProperties>();
+
+    useEffect(() => {
+        let frame: number | null = null;
+        const viewport = window.visualViewport;
+        const sync = () => {
+            if (frame) cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => {
+                frame = null;
+                const active = window.matchMedia("(pointer: coarse) and (max-width: 1024px)").matches;
+                if (!active) {
+                    setStyle(undefined);
+                    return;
+                }
+                const width = viewport?.width || window.innerWidth;
+                const height = viewport?.height || window.innerHeight;
+                setStyle({
+                    position: "fixed",
+                    left: viewport?.offsetLeft || 0,
+                    top: viewport?.offsetTop || 0,
+                    width,
+                    height,
+                    maxWidth: "100vw",
+                    maxHeight: "100dvh",
+                    "--dq-canvas-viewport-width": width + "px",
+                    "--dq-canvas-viewport-height": height + "px",
+                } as CSSProperties);
+            });
+        };
+
+        sync();
+        viewport?.addEventListener("resize", sync);
+        viewport?.addEventListener("scroll", sync);
+        window.addEventListener("resize", sync);
+        window.addEventListener("orientationchange", sync);
+        return () => {
+            if (frame) cancelAnimationFrame(frame);
+            viewport?.removeEventListener("resize", sync);
+            viewport?.removeEventListener("scroll", sync);
+            window.removeEventListener("resize", sync);
+            window.removeEventListener("orientationchange", sync);
+        };
+    }, []);
+
+    return style;
+}
+
 function VozebCanvasPage() {
     const { message, modal } = App.useApp();
     const params = useParams<{ id: string }>();
@@ -350,6 +398,7 @@ function VozebCanvasPage() {
     const [isNodeDragging, setIsNodeDragging] = useState(false);
     const [isMobileLandscape, setIsMobileLandscape] = useState(false);
     const [mobileNodeDrag, setMobileNodeDrag] = useState<{ type: CanvasNodeType; pointerId: number; clientX: number; clientY: number; moved: boolean } | null>(null);
+    const canvasViewportStyle = useCanvasVisualViewport();
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
@@ -804,9 +853,8 @@ function VozebCanvasPage() {
 
     useEffect(() => {
         const syncMobileMode = () => {
-            const touch = window.matchMedia("(pointer: coarse) and (max-width: 900px)").matches;
-            const landscape = window.matchMedia("(orientation: landscape)").matches;
-            setIsMobileLandscape(touch && landscape);
+            const mobileLandscape = window.matchMedia("(pointer: coarse) and (orientation: landscape) and (max-height: 600px)").matches;
+            setIsMobileLandscape(mobileLandscape);
             syncMobileCanvasEntry(projectLoaded);
         };
         syncMobileMode();
@@ -2920,7 +2968,7 @@ function VozebCanvasPage() {
     if (!projectLoaded) return <CanvasRefreshShell />;
 
     return (
-        <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
+        <main className="dq-canvas-page flex h-full min-h-0 overflow-hidden" style={{ ...canvasViewportStyle, background: theme.canvas.background, color: theme.node.text }}>
             <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onInsertAsset={handleAssetInsert} mobile={isMobileLandscape} onCreateNode={createNode} onStartNodeDrag={startMobileNodeDrag} />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar

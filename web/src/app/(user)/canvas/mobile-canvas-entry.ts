@@ -5,11 +5,7 @@ const ENTRY_KEY = "dq:canvas-mobile-entry";
 type RouterLike = { push: (href: string) => void };
 
 function isTouchPhone() {
-    return typeof window !== "undefined" && window.matchMedia("(pointer: coarse) and (max-width: 900px)").matches;
-}
-
-function isLandscape() {
-    return typeof window !== "undefined" && window.matchMedia("(orientation: landscape)").matches;
+    return typeof window !== "undefined" && window.matchMedia("(pointer: coarse) and (max-width: 1024px)").matches;
 }
 
 function ensureOverlay() {
@@ -26,17 +22,12 @@ function ensureOverlay() {
     return overlay;
 }
 
-async function requestLandscapeGameMode() {
-    try {
-        if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.({ navigationUI: "hide" });
-    } catch {
-        // Fullscreen is optional and unavailable in some mobile browsers.
-    }
+async function requestLandscapeOrientation() {
     try {
         const orientation = screen.orientation as ScreenOrientation & { lock?: (value: "landscape") => Promise<void> };
         await orientation.lock?.("landscape");
     } catch {
-        // iOS Safari and non-installed browsers commonly reject orientation locks.
+        // Orientation lock is optional and commonly unavailable outside installed apps.
     }
 }
 
@@ -47,19 +38,16 @@ export function enterMobileCanvas(router: RouterLike, href: string) {
     }
     window.sessionStorage.setItem(ENTRY_KEY, "1");
     ensureOverlay();
-    void requestLandscapeGameMode();
+    void requestLandscapeOrientation();
     window.setTimeout(() => router.push(href), 180);
 }
 
 export function syncMobileCanvasEntry(ready: boolean) {
     if (!isTouchPhone()) return;
-    const shouldGate = window.sessionStorage.getItem(ENTRY_KEY) === "1" || !isLandscape();
     const existing = document.getElementById("dq-canvas-entry-transition");
-    if (!shouldGate && !existing) return;
+    if (window.sessionStorage.getItem(ENTRY_KEY) !== "1" && !existing) return;
     const overlay = existing || ensureOverlay();
-    if (!overlay) return;
-    overlay.classList.toggle("is-landscape-gate", !isLandscape());
-    if (!ready || !isLandscape()) return;
+    if (!overlay || !ready) return;
     window.sessionStorage.removeItem(ENTRY_KEY);
     overlay.classList.add("is-complete");
     window.setTimeout(() => overlay?.remove(), 260);
@@ -72,5 +60,4 @@ export function releaseMobileCanvasGameMode() {
     } catch {
         // Orientation unlock is best-effort.
     }
-    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
 }

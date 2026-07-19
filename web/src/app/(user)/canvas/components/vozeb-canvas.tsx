@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { select } from "d3-selection";
+import { zoom, zoomIdentity, zoomTransform, type D3ZoomEvent, type ZoomBehavior } from "d3-zoom";
+import React, { useEffect, useRef } from "react";
 
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -22,31 +24,18 @@ type VozebCanvasProps = {
 export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", onViewportChange, onCanvasMouseDown, onCanvasDeselect, onContextMenu, onDrop, onGestureStart, children }: VozebCanvasProps) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const viewportRef = useRef(viewport);
-    const panState = useRef({
-        isPanning: false,
-        startX: 0,
-        startY: 0,
-        initialX: 0,
-        initialY: 0,
-        hasMoved: false,
-    });
-    const touchPointersRef = useRef(new Map<number, { clientX: number; clientY: number }>());
-    const pinchStateRef = useRef<{
-        active: boolean;
-        startDistance: number;
-        startScale: number;
-        worldX: number;
-        worldY: number;
-    }>({ active: false, startDistance: 0, startScale: viewport.k, worldX: 0, worldY: 0 });
-    const scaleRef = useRef(viewport.k);
+    const onViewportChangeRef = useRef(onViewportChange);
+    const onCanvasDeselectRef = useRef(onCanvasDeselect);
+    const onGestureStartRef = useRef(onGestureStart);
+    const zoomBehaviorRef = useRef<ZoomBehavior<HTMLDivElement, unknown> | null>(null);
     const frameRef = useRef<number | null>(null);
     const nextViewportRef = useRef<ViewportTransform | null>(null);
-    const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const gestureRef = useRef({ sourceType: "", moved: false });
 
-    useEffect(() => {
-        viewportRef.current = viewport;
-        scaleRef.current = viewport.k;
-    }, [viewport]);
+    viewportRef.current = viewport;
+    onViewportChangeRef.current = onViewportChange;
+    onCanvasDeselectRef.current = onCanvasDeselect;
+    onGestureStartRef.current = onGestureStart;
 
     useEffect(
         () => () => {
@@ -55,251 +44,90 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
         [],
     );
 
-    useEffect(() => {
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.code !== "Space") return;
-            if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
-            setIsSpacePressed(true);
-        };
-
-        const handleKeyUp = (event: KeyboardEvent) => {
-            if (event.code === "Space") setIsSpacePressed(false);
-        };
-
-        window.addEventListener("keydown", handleKeyDown);
-        window.addEventListener("keyup", handleKeyUp);
-        return () => {
-            window.removeEventListener("keydown", handleKeyDown);
-            window.removeEventListener("keyup", handleKeyUp);
-        };
-    }, []);
-
     const scheduleViewportChange = (next: ViewportTransform) => {
         nextViewportRef.current = next;
         if (frameRef.current) return;
         frameRef.current = requestAnimationFrame(() => {
             frameRef.current = null;
-            if (nextViewportRef.current) onViewportChange(nextViewportRef.current);
-        });
-    };
-    const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
-
-        const delta = -event.deltaY;
-        const factor = Math.pow(1.1, delta / 100);
-        const newScale = Math.min(Math.max(viewport.k * factor, 0.05), 5);
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!rect) return;
-
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-        const worldX = (mouseX - viewport.x) / viewport.k;
-        const worldY = (mouseY - viewport.y) / viewport.k;
-
-        onViewportChange({
-            x: mouseX - worldX * newScale,
-            y: mouseY - worldY * newScale,
-            k: newScale,
+            if (nextViewportRef.current) onViewportChangeRef.current(nextViewportRef.current);
         });
     };
 
-    const updateTouchPointer = (event: Pick<PointerEvent | React.PointerEvent, "pointerId" | "clientX" | "clientY">) => {
-        if (!touchPointersRef.current.has(event.pointerId)) return;
-        touchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-    };
-
-    const readTouchPair = () => Array.from(touchPointersRef.current.values()).slice(0, 2);
-
-    const startPinchZoom = () => {
-        const [first, second] = readTouchPair();
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!first || !second || !rect) return;
-        const midpoint = midpointOf(first, second);
-        const localX = midpoint.clientX - rect.left;
-        const localY = midpoint.clientY - rect.top;
-        const current = viewportRef.current;
-        pinchStateRef.current = {
-            active: true,
-            startDistance: distanceBetween(first, second),
-            startScale: current.k,
-            worldX: (localX - current.x) / current.k,
-            worldY: (localY - current.y) / current.k,
-        };
-        panState.current.isPanning = false;
-        onGestureStart?.();
-        document.body.style.cursor = "default";
-    };
-
-    const updatePinchZoom = (event: PointerEvent) => {
-        updateTouchPointer(event);
-        if (!pinchStateRef.current.active || touchPointersRef.current.size < 2) return false;
-        const [first, second] = readTouchPair();
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (!first || !second || !rect) return false;
-        event.preventDefault();
-        const midpoint = midpointOf(first, second);
-        const distance = Math.max(1, distanceBetween(first, second));
-        const startDistance = Math.max(1, pinchStateRef.current.startDistance);
-        const newScale = Math.min(Math.max(pinchStateRef.current.startScale * (distance / startDistance), 0.05), 5);
-        const localX = midpoint.clientX - rect.left;
-        const localY = midpoint.clientY - rect.top;
-        const next = {
-            x: localX - pinchStateRef.current.worldX * newScale,
-            y: localY - pinchStateRef.current.worldY * newScale,
-            k: newScale,
-        };
-        scaleRef.current = newScale;
-        viewportRef.current = next;
-        scheduleViewportChange(next);
-        return true;
-    };
-
-    const handlePointerDownCapture = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (event.pointerType !== "touch") return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom]")) return;
-        touchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-        if (touchPointersRef.current.size >= 2 && !pinchStateRef.current.active) {
-            event.preventDefault();
-            startPinchZoom();
-        }
-    };
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
         const target = event.target instanceof Element ? event.target : null;
-        if (target?.closest("[data-canvas-no-zoom]")) return;
-        if (target?.closest("[data-connection-create-menu]")) return;
+        if (target?.closest("[data-canvas-no-zoom],[data-connection-create-menu]")) return;
         const isBackgroundClick = !target?.closest("[data-node-id],[data-connection-id]");
-
-        if (event.pointerType === "touch") {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            touchPointersRef.current.set(event.pointerId, { clientX: event.clientX, clientY: event.clientY });
-            if (touchPointersRef.current.size >= 2 && !pinchStateRef.current.active) {
-                event.preventDefault();
-                startPinchZoom();
-                return;
-            }
-            if (pinchStateRef.current.active) {
-                event.preventDefault();
-                return;
-            }
-        }
 
         if (event.button === 0 && (event.ctrlKey || event.metaKey) && isBackgroundClick) {
             event.preventDefault();
             event.currentTarget.setPointerCapture(event.pointerId);
             onCanvasMouseDown?.(event);
-            return;
-        }
-
-        if (event.button === 1 || (event.button === 0 && !isSpacePressed && isBackgroundClick)) {
-            event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
-            panState.current = {
-                isPanning: true,
-                startX: event.clientX,
-                startY: event.clientY,
-                initialX: viewport.x,
-                initialY: viewport.y,
-                hasMoved: false,
-            };
-            document.body.style.cursor = "grabbing";
-            return;
-        }
-
-        if (event.button === 0 && isSpacePressed && isBackgroundClick) {
-            event.preventDefault();
         }
     };
-
-    useEffect(() => {
-        const resetTouchState = () => {
-            touchPointersRef.current.clear();
-            pinchStateRef.current.active = false;
-            panState.current.isPanning = false;
-            document.body.style.cursor = "default";
-        };
-        const handlePointerMove = (event: PointerEvent) => {
-            if (event.pointerType === "touch" && updatePinchZoom(event)) return;
-            if (!panState.current.isPanning) return;
-
-            const dx = event.clientX - panState.current.startX;
-            const dy = event.clientY - panState.current.startY;
-            if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-                panState.current.hasMoved = true;
-            }
-
-            nextViewportRef.current = {
-                x: panState.current.initialX + dx,
-                y: panState.current.initialY + dy,
-                k: scaleRef.current,
-            };
-            if (frameRef.current) return;
-            frameRef.current = requestAnimationFrame(() => {
-                frameRef.current = null;
-                if (nextViewportRef.current) onViewportChange(nextViewportRef.current);
-            });
-        };
-
-        const handlePointerUp = (event: PointerEvent) => {
-            let resumedPan = false;
-            if (event.pointerType === "touch") {
-                touchPointersRef.current.delete(event.pointerId);
-                if (pinchStateRef.current.active && touchPointersRef.current.size === 1) {
-                    const remaining = readTouchPair()[0];
-                    if (remaining) {
-                        panState.current = { isPanning: true, startX: remaining.clientX, startY: remaining.clientY, initialX: viewportRef.current.x, initialY: viewportRef.current.y, hasMoved: true };
-                        resumedPan = true;
-                    }
-                    pinchStateRef.current.active = false;
-                } else if (!touchPointersRef.current.size) {
-                    pinchStateRef.current.active = false;
-                }
-            }
-            if (resumedPan) return;
-            if (!panState.current.isPanning) return;
-
-            if (!panState.current.hasMoved) {
-                onCanvasDeselect?.();
-            }
-            panState.current.isPanning = false;
-            document.body.style.cursor = "default";
-        };
-
-        window.addEventListener("pointermove", handlePointerMove);
-        window.addEventListener("pointerup", handlePointerUp);
-        window.addEventListener("pointercancel", handlePointerUp);
-        window.addEventListener("blur", resetTouchState);
-        document.addEventListener("visibilitychange", resetTouchState);
-        return () => {
-            window.removeEventListener("pointermove", handlePointerMove);
-            window.removeEventListener("pointerup", handlePointerUp);
-            window.removeEventListener("pointercancel", handlePointerUp);
-            window.removeEventListener("blur", resetTouchState);
-            document.removeEventListener("visibilitychange", resetTouchState);
-        };
-    }, [onCanvasDeselect, onGestureStart, onViewportChange]);
 
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
-        const preventWheelScroll = (event: WheelEvent) => event.preventDefault();
-        container.addEventListener("wheel", preventWheelScroll, { passive: false });
-        return () => container.removeEventListener("wheel", preventWheelScroll);
+        const selection = select(container);
+        const behavior = zoom<HTMLDivElement, unknown>()
+            .scaleExtent([0.05, 5])
+            .clickDistance(4)
+            .tapDistance(8)
+            .filter((event) => {
+                const target = event.target instanceof Element ? event.target : null;
+                if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown,[data-connection-create-menu]")) return false;
+                const isBackground = !target?.closest("[data-node-id],[data-connection-id]");
+                if (event.type === "wheel") return true;
+                if (event.type.startsWith("touch")) return touchCount(event) >= 2 || isBackground;
+                if (event.type === "mousedown") return !(event.ctrlKey || event.metaKey) && (event.button === 1 || (event.button === 0 && isBackground));
+                return false;
+            })
+            .on("start.canvas", (event: D3ZoomEvent<HTMLDivElement, unknown>) => {
+                const sourceType = event.sourceEvent?.type || "";
+                gestureRef.current = { sourceType, moved: false };
+                if (sourceType === "touchstart" && touchCount(event.sourceEvent) >= 2) onGestureStartRef.current?.();
+                if (sourceType === "mousedown") container.style.cursor = "grabbing";
+            })
+            .on("zoom.canvas", (event: D3ZoomEvent<HTMLDivElement, unknown>) => {
+                const next = { x: event.transform.x, y: event.transform.y, k: event.transform.k };
+                const current = viewportRef.current;
+                if (Math.abs(next.x - current.x) > 0.5 || Math.abs(next.y - current.y) > 0.5 || Math.abs(next.k - current.k) > 0.0005) gestureRef.current.moved = true;
+                viewportRef.current = next;
+                scheduleViewportChange(next);
+            })
+            .on("end.canvas", () => {
+                if ((gestureRef.current.sourceType === "mousedown" || gestureRef.current.sourceType === "touchstart") && !gestureRef.current.moved) onCanvasDeselectRef.current?.();
+                container.style.cursor = "grab";
+            });
+
+        zoomBehaviorRef.current = behavior;
+        selection.call(behavior);
+        selection.on("dblclick.zoom", null);
+        const initial = viewportRef.current;
+        selection.call(behavior.transform, zoomIdentity.translate(initial.x, initial.y).scale(initial.k));
+        return () => {
+            selection.on(".zoom", null);
+            zoomBehaviorRef.current = null;
+            container.style.cursor = "";
+        };
     }, [containerRef]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        const behavior = zoomBehaviorRef.current;
+        if (!container || !behavior) return;
+        const current = zoomTransform(container);
+        if (Math.abs(current.x - viewport.x) < 0.5 && Math.abs(current.y - viewport.y) < 0.5 && Math.abs(current.k - viewport.k) < 0.0005) return;
+        select(container).call(behavior.transform, zoomIdentity.translate(viewport.x, viewport.y).scale(viewport.k));
+    }, [containerRef, viewport.k, viewport.x, viewport.y]);
 
     return (
         <div
             ref={containerRef}
             className="canvas-surface relative h-full w-full cursor-grab select-none overflow-hidden"
             style={{ background: theme.canvas.background, touchAction: "none", overscrollBehavior: "none" }}
-            onPointerDownCapture={handlePointerDownCapture}
             onPointerDown={handlePointerDown}
-            onWheel={handleWheel}
-            onLostPointerCapture={() => {
-                if (!touchPointersRef.current.size) pinchStateRef.current.active = false;
-            }}
             onContextMenu={onContextMenu}
             onDragOver={(event) => event.preventDefault()}
             onDrop={onDrop}
@@ -308,7 +136,7 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
             <div
                 className="absolute origin-top-left"
                 style={{
-                    transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.k})`,
+                    transform: "translate(" + viewport.x + "px, " + viewport.y + "px) scale(" + viewport.k + ")",
                 }}
             >
                 {children}
@@ -317,12 +145,8 @@ export function VozebCanvas({ containerRef, viewport, backgroundMode = "lines", 
     );
 }
 
-function distanceBetween(first: { clientX: number; clientY: number }, second: { clientX: number; clientY: number }) {
-    return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
-}
-
-function midpointOf(first: { clientX: number; clientY: number }, second: { clientX: number; clientY: number }) {
-    return { clientX: (first.clientX + second.clientX) / 2, clientY: (first.clientY + second.clientY) / 2 };
+function touchCount(event: Event | null | undefined) {
+    return event && "touches" in event ? (event as TouchEvent).touches.length : 0;
 }
 
 function CanvasGrid({ viewport, mode }: { viewport: ViewportTransform; mode: CanvasBackgroundMode }) {
