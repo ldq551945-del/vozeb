@@ -3168,3 +3168,293 @@ html.dark .canvas-agent-confirm-switch.ant-switch.ant-switch-checked:hover:not(.
         padding-bottom: calc(28px + env(safe-area-inset-bottom));
     }
 }
+
+.dq-canvas-entry-transition {
+    align-items: center;
+    background: #0b0f14;
+    color: #f8fafc;
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    position: fixed;
+    transition: opacity 220ms ease;
+    z-index: 2000;
+}
+.dq-canvas-entry-transition.is-visible,
+.dq-canvas-entry-transition.is-landscape-gate {
+    opacity: 1;
+}
+.dq-canvas-entry-transition.is-complete {
+    opacity: 0;
+}
+.dq-canvas-entry-mark {
+    background: #f8fafc;
+    height: 58px;
+    mask: url(/logo.svg) center / contain no-repeat;
+    width: 58px;
+}
+.dq-canvas-entry-ring {
+    border: 1px solid rgba(125, 211, 252, 0.8);
+    border-radius: 999px;
+    height: 104px;
+    position: absolute;
+    width: 104px;
+    animation: dq-canvas-entry-pulse 1.1s ease-in-out infinite;
+}
+@keyframes dq-canvas-entry-pulse {
+    0%,
+    100% {
+        opacity: 0.25;
+        transform: scale(0.8) rotate(0deg);
+    }
+    50% {
+        opacity: 0.9;
+        transform: scale(1.1) rotate(180deg);
+    }
+}
+
+.canvas-mobile-action-rail,
+.canvas-mobile-side-panel,
+.canvas-mobile-node-drag-ghost,
+.canvas-mobile-title,
+.canvas-mobile-status {
+    display: none;
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 600px) {
+    .canvas-topbar {
+        height: 48px;
+        padding-left: max(10px, env(safe-area-inset-left));
+        padding-right: max(10px, env(safe-area-inset-right));
+    }
+
+    .canvas-topbar-title,
+    .canvas-topbar .canvas-topbar-actions .canvas-user-status-actions,
+    .canvas-topbar .canvas-topbar-divider {
+        display: none;
+    }
+
+    .canvas-mobile-status {
+        pointer-events: auto !important;
+        background: rgba(15, 23, 42, 0.78) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        border-radius: 999px !important;
+        color: #f8fafc !important;
+        display: inline-flex !important;
+        height: 28px !important;
+        padding: 0 8px !important;
+        position: fixed !important;
+        right: max(10px, env(safe-area-inset-right));
+        top: max(8px, env(safe-area-inset-top));
+        width: auto !important;
+        z-index: 80;
+    }
+
+    .canvas-mobile-title {
+        bottom: calc(env(safe-area-inset-bottom) + 58px);
+        color: var(--foreground);
+        display: block;
+        max-width: min(180px, 28vw);
+        overflow: hidden;
+        pointer-events: none;
+        position: fixed;
+        right: max(70px, env(safe-area-inset-right));
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        z-index: 80;
+    }
+
+    .canvas-topbar .canvas-agent-button {
+        align-items: center !important;
+        display: inline-flex !important;
+        height: 36px !important;
+        justify-content: center !important;
+        left: max(10px, env(safe-area-inset-left));
+        min-height: 36px !important;
+        min-width: 36px !important;
+        padding: 0 !important;
+        position: fixed !important;
+        top: calc(env(safe-area-inset-top) + 52px);
+        width: 36px !important;
+        z-index: 80;
+    }
+
+    .canvas-topbar .canvas-agent-button > span:not(.ant-btn-icon) {
+        display: none !important;
+    }
+
+    .canvas-toolbar-dock-wrap {
+        bottom: calc(env(safe-area-inset-bottom) + 10px);
+        left: max(8px, env(safe-area-inset-left));
+        right: auto;
+        top: calc(env(safe-area-inset-top) + 104px);
+        width: 48px;
+    }
+
+    .canvas-toolbar-dock {
+        align-items: center;
+        flex-direction: column;
+        height: 100%;
+        max-height: calc(100dvh - 130px);
+        max-width: 48px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 6px;
+        width: 48px;
+    }
+
+    .canvas-toolbar-dock .ant-btn {
+        flex: 0 0 36px;
+        height: 36px !important;
+        min-width: 36px !important;
+        width: 36px !important;
+    }
+
+    .canvas-toolbar-dock > .h-6 {
+        height: 1px;
+        margin: 2px 0;
+        width: 24px;
+    }
+
+    .canvas-zoom-controls {
+        bottom: calc(env(safe-area-inset-bottom) + 10px);
+        left: 50%;
+        right: auto;
+        top: auto;
+        transform: translateX(-50%);
+        width: min(420px, calc(100vw - 180px));
+    }
+
+    .canvas-zoom-dock {
+        height: 48px;
+        width: 100%;
+    }
+
+    .canvas-mobile-action-rail {
+        align-items: center;
+        background: color-mix(in srgb, var(--background) 88%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: calc(100dvh - 154px);
+        overflow-y: auto;
+        padding: 5px;
+        position: fixed;
+        right: max(8px, env(safe-area-inset-right));
+        top: calc(env(safe-area-inset-top) + 54px);
+        width: 46px;
+        z-index: 75;
+    }
+
+    .canvas-mobile-action-button {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: 11px;
+        color: inherit;
+        display: inline-flex;
+        flex: 0 0 36px;
+        height: 36px;
+        justify-content: center;
+        min-width: 36px;
+        opacity: 0.85;
+        width: 36px;
+    }
+
+    .canvas-mobile-action-button:disabled {
+        opacity: 0.3;
+    }
+
+    .canvas-mobile-side-panel {
+        background: color-mix(in srgb, var(--background) 96%, transparent);
+        border-left: 1px solid var(--border);
+        border-right: 0;
+        bottom: calc(env(safe-area-inset-bottom) + 8px);
+        box-shadow: -16px 0 34px rgba(15, 23, 42, 0.18);
+        display: flex !important;
+        right: calc(max(8px, env(safe-area-inset-right)) + 54px);
+        top: calc(env(safe-area-inset-top) + 8px);
+        transform: translateX(0);
+        transition:
+            transform 220ms ease,
+            opacity 220ms ease;
+        width: min(360px, calc(100vw - 112px)) !important;
+    }
+
+    .canvas-mobile-node-palette {
+        display: grid;
+        gap: 4px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        padding: 8px 10px;
+    }
+
+    .canvas-mobile-node-palette-item {
+        align-items: center;
+        background: color-mix(in srgb, var(--background) 72%, var(--foreground) 8%);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        justify-content: center;
+        min-height: 44px;
+        min-width: 0;
+        padding: 4px 2px;
+        touch-action: none;
+    }
+
+    .canvas-mobile-node-palette-item span {
+        font-size: 9px;
+        line-height: 1;
+    }
+
+    .canvas-mobile-node-drag-ghost {
+        align-items: center;
+        background: rgba(14, 165, 233, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        border-radius: 12px;
+        color: white;
+        display: flex;
+        height: 48px;
+        justify-content: center;
+        pointer-events: none;
+        position: fixed;
+        transform: translate(-50%, -50%) scale(1.04);
+        width: 72px;
+        z-index: 140;
+    }
+
+    .canvas-agent-panel-frame {
+        bottom: calc(env(safe-area-inset-bottom) + 8px) !important;
+        height: auto !important;
+        left: calc(max(8px, env(safe-area-inset-left)) + 54px) !important;
+        max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 16px) !important;
+        position: fixed !important;
+        top: calc(env(safe-area-inset-top) + 8px) !important;
+        width: min(44vw, 380px) !important;
+        z-index: 90 !important;
+    }
+
+    .canvas-agent-panel {
+        height: 100% !important;
+        max-height: none !important;
+        width: 100% !important;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dq-canvas-entry-transition,
+    .canvas-mobile-side-panel,
+    .canvas-agent-panel-frame {
+        transition-duration: 1ms !important;
+    }
+    .dq-canvas-entry-ring {
+        animation: none !important;
+    }
+}

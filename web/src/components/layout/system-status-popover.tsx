@@ -15,7 +15,7 @@ const STATUS_COPY = {
     offline: { label: "状态不可用", color: "text-rose-600 dark:text-rose-300", icon: CircleX },
 } as const;
 
-export function SystemStatusPopover({ className, style }: { className?: string; style?: React.CSSProperties }) {
+export function SystemStatusPopover({ className, style, compact = false }: { className?: string; style?: React.CSSProperties; compact?: boolean }) {
     const rootRef = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false);
     const [status, setStatus] = useState<StatusPayload>({ status: "offline" });
@@ -65,25 +65,47 @@ export function SystemStatusPopover({ className, style }: { className?: string; 
         <div ref={rootRef} className="relative shrink-0" data-dq-status>
             <button
                 type="button"
-                className={cn("inline-flex size-8 items-center justify-center rounded-md border border-stone-200 bg-white/85 shadow-sm transition hover:border-stone-300 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-950/35 dark:hover:border-stone-700 dark:hover:bg-stone-900", className)}
+                className={cn(
+                    "inline-flex size-8 items-center justify-center rounded-md border border-stone-200 bg-white/85 shadow-sm transition hover:border-stone-300 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-950/35 dark:hover:border-stone-700 dark:hover:bg-stone-900",
+                    className,
+                )}
                 style={style}
                 onClick={() => setOpen((value) => !value)}
                 aria-label="DQ 系统状态"
                 aria-expanded={open}
                 title="DQ 系统状态"
             >
-                <Activity className={cn("size-4", current.color)} />
+                {compact ? (
+                    <>
+                        <span className="size-2 rounded-full" style={{ background: status.status === "healthy" ? "#22c55e" : status.status === "degraded" ? "#f59e0b" : "#f43f5e" }} />
+                        <span className="text-[10px] tabular-nums">
+                            {Math.max(0, status.onlineApprox || 0)} · {latency === null ? "--" : latency + "ms"}
+                        </span>
+                    </>
+                ) : (
+                    <Activity className={cn("size-4", current.color)} />
+                )}
             </button>
             {open ? (
-                <section className="absolute right-0 top-[calc(100%+0.6rem)] z-[80] w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-stone-200 bg-white p-4 text-stone-900 shadow-xl shadow-stone-950/10 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-100" role="dialog" aria-label="系统状态">
+                <section
+                    className="absolute right-0 top-[calc(100%+0.6rem)] z-[80] w-[min(18rem,calc(100vw-2rem))] rounded-lg border border-stone-200 bg-white p-4 text-stone-900 shadow-xl shadow-stone-950/10 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-100"
+                    role="dialog"
+                    aria-label="系统状态"
+                >
                     <div className="flex items-center gap-2">
                         <Icon className={cn("size-4", current.color)} />
                         <span className="font-semibold">系统状态</span>
                         <span className={cn("ml-auto text-sm", current.color)}>{current.label}</span>
                     </div>
                     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-md bg-stone-50 px-3 py-2 dark:bg-stone-900"><dt className="text-xs text-stone-500 dark:text-stone-400">在线用户</dt><dd className="mt-1 font-semibold">约 {Math.max(0, status.onlineApprox || 0)} 人</dd></div>
-                        <div className="rounded-md bg-stone-50 px-3 py-2 dark:bg-stone-900"><dt className="text-xs text-stone-500 dark:text-stone-400">访问延迟</dt><dd className="mt-1 font-semibold">{latency === null ? "--" : `${latency} ms`}</dd></div>
+                        <div className="rounded-md bg-stone-50 px-3 py-2 dark:bg-stone-900">
+                            <dt className="text-xs text-stone-500 dark:text-stone-400">在线用户</dt>
+                            <dd className="mt-1 font-semibold">约 {Math.max(0, status.onlineApprox || 0)} 人</dd>
+                        </div>
+                        <div className="rounded-md bg-stone-50 px-3 py-2 dark:bg-stone-900">
+                            <dt className="text-xs text-stone-500 dark:text-stone-400">访问延迟</dt>
+                            <dd className="mt-1 font-semibold">{latency === null ? "--" : `${latency} ms`}</dd>
+                        </div>
                     </dl>
                 </section>
             ) : null}

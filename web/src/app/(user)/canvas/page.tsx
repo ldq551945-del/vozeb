@@ -14,6 +14,7 @@ import type { CanvasExportFile } from "./export-types";
 import { useCanvasStore } from "./stores/use-canvas-store";
 import { useCanvasUiStore } from "./stores/use-canvas-ui-store";
 import { exportCanvasProjects } from "./utils/canvas-export";
+import { enterMobileCanvas } from "./mobile-canvas-entry";
 
 export default function CanvasPage() {
     const { message } = App.useApp();
@@ -32,7 +33,7 @@ export default function CanvasPage() {
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
     const agentQuery = agentMode ? "?mode=" + encodeURIComponent(mode || "new") : "";
     const enterProject = (id: string) => {
-        router.push(`/canvas/${id}${agentQuery}`);
+        enterMobileCanvas(router, `/canvas/${id}${agentQuery}`);
     };
     const createAndEnter = () => enterProject(createProject(`DQ 画布 ${projects.length + 1}`));
     const importCanvas = async (file?: File) => {

@@ -16,13 +16,17 @@ function initialWidth() {
 }
 
 function initialOpen() {
-    return typeof window === "undefined" || window.localStorage.getItem(OPEN_KEY) !== "0";
+    if (typeof window === "undefined") return true;
+    const saved = window.localStorage.getItem(OPEN_KEY);
+    if (saved === null && window.matchMedia("(pointer: coarse) and (max-width: 900px)").matches) return false;
+    return saved !== "0";
 }
 
 type CanvasSidePanelState = {
     width: number;
     open: boolean;
     setWidth: (width: number) => void;
+    setOpen: (open: boolean) => void;
     toggle: () => void;
 };
 
@@ -33,6 +37,10 @@ export const useCanvasSidePanelStore = create<CanvasSidePanelState>((set, get) =
         const next = Math.min(CANVAS_SIDE_PANEL_MAX_WIDTH, Math.max(CANVAS_SIDE_PANEL_MIN_WIDTH, width));
         if (typeof window !== "undefined") window.localStorage.setItem(WIDTH_KEY, String(next));
         set({ width: next });
+    },
+    setOpen: (open) => {
+        if (typeof window !== "undefined") window.localStorage.setItem(OPEN_KEY, open ? "1" : "0");
+        set({ open });
     },
     toggle: () => {
         const open = !get().open;

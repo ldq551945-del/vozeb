@@ -21,6 +21,10 @@ import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { SystemStatusPopover } from "@/components/layout/system-status-popover";
+import { CanvasMobileActionRail } from "../components/canvas-mobile-action-rail";
+import { enterMobileCanvas, releaseMobileCanvasGameMode, syncMobileCanvasEntry } from "../mobile-canvas-entry";
+import { useCanvasSidePanelStore } from "../stores/use-canvas-side-panel-store";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "../utils/canvas-image-data";
@@ -294,6 +298,8 @@ function VozebCanvasPage() {
     const createProject = useCanvasStore((state) => state.createProject);
     const openProject = useCanvasStore((state) => state.openProject);
     const updateProject = useCanvasStore((state) => state.updateProject);
+    const sidePanelOpen = useCanvasSidePanelStore((state) => state.open);
+    const setSidePanelOpen = useCanvasSidePanelStore((state) => state.setOpen);
     const renameProject = useCanvasStore((state) => state.renameProject);
     const deleteProjects = useCanvasStore((state) => state.deleteProjects);
     const currentProject = useCanvasStore((state) => state.projects.find((project) => project.id === projectId));
@@ -342,6 +348,8 @@ function VozebCanvasPage() {
     const [collapsingBatchIds, setCollapsingBatchIds] = useState<Set<string>>(new Set());
     const [openingBatchIds, setOpeningBatchIds] = useState<Set<string>>(new Set());
     const [isNodeDragging, setIsNodeDragging] = useState(false);
+    const [isMobileLandscape, setIsMobileLandscape] = useState(false);
+    const [mobileNodeDrag, setMobileNodeDrag] = useState<{ type: CanvasNodeType; pointerId: number; clientX: number; clientY: number; moved: boolean } | null>(null);
 
     const nodesRef = useRef(nodes);
     const connectionsRef = useRef(connections);
@@ -357,6 +365,7 @@ function VozebCanvasPage() {
     const resumingImageTaskIdsRef = useRef(new Set<string>());
     const resumingVideoTaskIdsRef = useRef(new Set<string>());
     const resumingTextTaskIdsRef = useRef(new Set<string>());
+    const previousCanvasSizeRef = useRef({ width: 0, height: 0 });
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -616,7 +625,6 @@ function VozebCanvasPage() {
         void restore();
     }, [hydrated, openProject, projectId, router]);
 
-
     useEffect(() => {
         if (!projectLoaded) return;
         const resumable = nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.status === NODE_STATUS_LOADING && node.metadata.imageTask && !generationRequestsRef.current.has(node.id));
@@ -774,11 +782,18 @@ function VozebCanvasPage() {
 
         const updateSize = () => {
             const rect = el.getBoundingClientRect();
+            const previous = previousCanvasSizeRef.current;
             setSize({ width: rect.width, height: rect.height });
             if (!didInitialCenterRef.current) {
                 didInitialCenterRef.current = true;
                 setViewport({ x: rect.width / 2, y: rect.height / 2, k: 1 });
+            } else if (previous.width > 0 && previous.height > 0 && (previous.width !== rect.width || previous.height !== rect.height)) {
+                const current = viewportRef.current;
+                const worldCenterX = (previous.width / 2 - current.x) / current.k;
+                const worldCenterY = (previous.height / 2 - current.y) / current.k;
+                setViewport({ x: rect.width / 2 - worldCenterX * current.k, y: rect.height / 2 - worldCenterY * current.k, k: current.k });
             }
+            previousCanvasSizeRef.current = { width: rect.width, height: rect.height };
         };
 
         updateSize();
@@ -786,6 +801,24 @@ function VozebCanvasPage() {
         resizeObserver.observe(el);
         return () => resizeObserver.disconnect();
     }, []);
+
+    useEffect(() => {
+        const syncMobileMode = () => {
+            const touch = window.matchMedia("(pointer: coarse) and (max-width: 900px)").matches;
+            const landscape = window.matchMedia("(orientation: landscape)").matches;
+            setIsMobileLandscape(touch && landscape);
+            syncMobileCanvasEntry(projectLoaded);
+        };
+        syncMobileMode();
+        window.addEventListener("resize", syncMobileMode);
+        window.addEventListener("orientationchange", syncMobileMode);
+        return () => {
+            window.removeEventListener("resize", syncMobileMode);
+            window.removeEventListener("orientationchange", syncMobileMode);
+        };
+    }, [projectLoaded]);
+
+    useEffect(() => () => releaseMobileCanvasGameMode(), []);
 
     const screenToCanvas = useCallback((clientX: number, clientY: number) => {
         const rect = containerRef.current?.getBoundingClientRect();
@@ -813,6 +846,22 @@ function VozebCanvasPage() {
         }
     }, []);
 
+    const cancelCanvasTouchInteraction = useCallback(() => {
+        if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+        dragRef.current.isDraggingNode = false;
+        dragRef.current.hasMoved = false;
+        dragRef.current.initialSelectedNodes = [];
+        historyPausedRef.current = false;
+        nodeDraggingRef.current = false;
+        setIsNodeDragging(false);
+        selectionBoxRef.current = null;
+        setSelectionBox(null);
+        setConnecting(null);
+        setPendingConnectionCreate(null);
+    }, [setConnecting]);
     const keepNodeToolbar = useCallback(
         (nodeId: string) => {
             if (nodeDraggingRef.current || nodeImageSettingsOpen) return;
@@ -1064,6 +1113,42 @@ function VozebCanvasPage() {
         [effectiveConfig.canvasImageCount, effectiveConfig.count, effectiveConfig.imageModel, effectiveConfig.model, effectiveConfig.size, getCanvasCenter],
     );
 
+    const startMobileNodeDrag = useCallback((type: CanvasNodeType, event: ReactPointerEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setMobileNodeDrag({ type, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, moved: false });
+    }, []);
+
+    useEffect(() => {
+        if (!mobileNodeDrag) return;
+        const finish = (event: PointerEvent, commit: boolean) => {
+            if (event.pointerId !== mobileNodeDrag.pointerId) return;
+            if (commit) {
+                const rect = containerRef.current?.getBoundingClientRect();
+                const insideCanvas = rect && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+                if (insideCanvas) createNode(mobileNodeDrag.type, screenToCanvas(event.clientX, event.clientY));
+                else if (!mobileNodeDrag.moved) createNode(mobileNodeDrag.type);
+                if (insideCanvas || !mobileNodeDrag.moved) setSidePanelOpen(false);
+            }
+            setMobileNodeDrag(null);
+        };
+        const onMove = (event: PointerEvent) => {
+            if (event.pointerId === mobileNodeDrag.pointerId) {
+                const moved = Math.abs(event.clientX - mobileNodeDrag.clientX) > 6 || Math.abs(event.clientY - mobileNodeDrag.clientY) > 6;
+                setMobileNodeDrag((current) => (current ? { ...current, clientX: event.clientX, clientY: event.clientY, moved: current.moved || moved } : current));
+            }
+        };
+        const onUp = (event: PointerEvent) => finish(event, true);
+        const onCancel = (event: PointerEvent) => finish(event, false);
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+        window.addEventListener("pointercancel", onCancel);
+        return () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            window.removeEventListener("pointercancel", onCancel);
+        };
+    }, [createNode, mobileNodeDrag, screenToCanvas, setSidePanelOpen]);
     const deleteNodes = useCallback(
         (ids: Set<string>) => {
             if (!ids.size) return;
@@ -2836,7 +2921,7 @@ function VozebCanvasPage() {
 
     return (
         <main className="flex h-full min-h-0 overflow-hidden" style={{ background: theme.canvas.background, color: theme.node.text }}>
-            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onInsertAsset={handleAssetInsert} />
+            <CanvasSidePanel nodes={nodes} selectedNodeIds={selectedNodeIds} onFocusNode={focusNode} onInsertAsset={handleAssetInsert} mobile={isMobileLandscape} onCreateNode={createNode} onStartNodeDrag={startMobileNodeDrag} />
             <section className="relative min-w-0 flex-1 overflow-hidden">
                 <CanvasTopBar
                     title={currentProject?.title || "未命名画布"}
@@ -2848,8 +2933,14 @@ function VozebCanvasPage() {
                     onCancelTitleEditing={() => setTitleEditing(false)}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
-                    onHome={() => router.push("/")}
-                    onProjects={() => router.push("/canvas")}
+                    onHome={() => {
+                        releaseMobileCanvasGameMode();
+                        router.push("/");
+                    }}
+                    onProjects={() => {
+                        releaseMobileCanvasGameMode();
+                        router.push("/canvas");
+                    }}
                     onCreateProject={createAndOpenProject}
                     onDeleteProject={deleteCurrentProject}
                     onImportImage={() => handleUploadRequest()}
@@ -2871,6 +2962,7 @@ function VozebCanvasPage() {
                     onCanvasDeselect={deselectCanvas}
                     onContextMenu={preventCanvasContextMenu}
                     onDrop={handleDrop}
+                    onGestureStart={cancelCanvasTouchInteraction}
                 >
                     <svg className="absolute left-0 top-0 h-[10000px] w-[10000px] overflow-visible" style={{ pointerEvents: "none", transform: "translateZ(0)", zIndex: 0 }}>
                         {connections
@@ -3014,6 +3106,23 @@ function VozebCanvasPage() {
                     ) : null}
                     {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
                 </VozebCanvas>
+
+                {isMobileLandscape ? (
+                    <CanvasMobileActionRail
+                        canUndo={historyState.canUndo}
+                        canRedo={historyState.canRedo}
+                        onDeselect={deselectCanvas}
+                        onUndo={undoCanvas}
+                        onRedo={redoCanvas}
+                        onToggleElements={() => setSidePanelOpen(!sidePanelOpen)}
+                        onUpload={() => handleUploadRequest()}
+                    />
+                ) : null}
+                {mobileNodeDrag ? (
+                    <div className="canvas-mobile-node-drag-ghost" style={{ left: mobileNodeDrag.clientX, top: mobileNodeDrag.clientY }}>
+                        <span>{mobileNodeDrag.type}</span>
+                    </div>
+                ) : null}
 
                 <CanvasNodeHoverToolbar
                     node={isNodeDragging || nodeImageSettingsOpen ? null : toolbarNode}
@@ -3286,6 +3395,11 @@ function CanvasTopBar({
                         )}
                     </div>
                 </div>
+
+                <div className="canvas-mobile-title" title={title}>
+                    {title}
+                </div>
+                <SystemStatusPopover compact className="canvas-mobile-status" />
 
                 <div className="canvas-topbar-actions pointer-events-auto flex min-w-0 items-center gap-1.5">
                     {compactAgentStatus ? <CompactAgentStatus status={compactAgentStatus} onClick={onToggleAgent} /> : null}
